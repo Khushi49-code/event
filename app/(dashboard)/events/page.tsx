@@ -1,0 +1,290 @@
+// app/(dashboard)/events/page.tsx
+"use client";
+
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { Plus, Edit, Trash2, Eye, Search, Loader2, RefreshCw, Calendar, MapPin, Tag } from 'lucide-react';
+import Link from 'next/link';
+import { useEvents } from '@/hooks/useFirebase';
+import toast from 'react-hot-toast';
+
+export default function EventsPage() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { events, loading, error, deleteEvent, refreshEvents } = useEvents();
+
+  const handleDelete = async (id: string, eventName: string) => {
+    if (!confirm(`Are you sure you want to delete "${eventName}"?`)) {
+      return;
+    }
+
+    setDeletingId(id);
+    const loadingToast = toast.loading(`Deleting "${eventName}"...`);
+    
+    try {
+      await deleteEvent(id);
+      toast.success(`"${eventName}" deleted successfully!`, { 
+        id: loadingToast,
+        duration: 3000
+      });
+    } catch (error: any) {
+      console.error('Delete error:', error);
+      toast.error(error.message || 'Failed to delete event. Please try again.', { 
+        id: loadingToast,
+        duration: 4000
+      });
+      
+      // Refresh to ensure data consistency
+      await refreshEvents();
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleRefresh = async () => {
+    const refreshToast = toast.loading('Refreshing events...');
+    try {
+      await refreshEvents();
+      toast.success(`Events refreshed successfully`, { 
+        id: refreshToast,
+        duration: 2000
+      });
+    } catch (error) {
+      toast.error('Failed to refresh events', { 
+        id: refreshToast,
+        duration: 3000
+      });
+    }
+  };
+
+  // Filter events based on search
+  const filteredEvents = events.filter((event) => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      event.eventName?.toLowerCase().includes(searchLower) ||
+      event.eventType?.toLowerCase().includes(searchLower) ||
+      event.venue?.toLowerCase().includes(searchLower) ||
+      event.description?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Get status color
+  const getStatusColor = (status?: string) => {
+    switch (status?.toLowerCase()) {
+      case 'active':
+        return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
+      case 'completed':
+        return 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300';
+      case 'cancelled':
+        return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+      default:
+        return 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300';
+    }
+  };
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Events</h1>
+          <Button onClick={handleRefresh}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
+              <div className="text-red-500 mb-4">
+                <p className="text-lg font-semibold">Error Loading Events</p>
+                <p className="text-sm mt-1">{error}</p>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={handleRefresh}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Events</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+            Manage and organize your events
+          </p>
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline" 
+            onClick={handleRefresh}
+            disabled={loading}
+            className="w-full sm:w-auto"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Link href="/events/create" className="w-full sm:w-auto">
+            <Button className="w-full sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Event
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Events Table */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <CardTitle>
+              All Events
+              {!loading && (
+                <span className="text-sm font-normal text-gray-500 ml-2">
+                  ({filteredEvents.length} {filteredEvents.length === 1 ? 'event' : 'events'})
+                </span>
+              )}
+            </CardTitle>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search events..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <p className="mt-2 text-gray-500">Loading events...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Event Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Venue</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEvents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-12">
+                        <div className="flex flex-col items-center">
+                          <Calendar className="h-12 w-12 text-gray-300 mb-3" />
+                          <p className="text-gray-500">
+                            {searchTerm ? 'No events match your search' : 'No events found'}
+                          </p>
+                          {!searchTerm && (
+                            <Link href="/events/create">
+                              <Button variant="link" className="mt-2">
+                                Create your first event
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredEvents.map((event) => (
+                      <TableRow key={event.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        <TableCell>
+                          <div className="font-medium">{event.eventName}</div>
+                          {event.description && (
+                            <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                              {event.description}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center gap-1 w-fit">
+                            <Tag className="h-3 w-3" />
+                            {event.eventType || 'General'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4 text-gray-400" />
+                            {event.eventDate}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-4 w-4 text-gray-400" />
+                            {event.venue}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(event.status)}`}>
+                            {event.status || 'Active'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Link href={`/events/${event.id}`}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Link href={`/events/edit/${event.id}`}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              onClick={() => handleDelete(event.id, event.eventName)}
+                              disabled={deletingId === event.id}
+                            >
+                              {deletingId === event.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

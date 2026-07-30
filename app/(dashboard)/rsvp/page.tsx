@@ -1,0 +1,331 @@
+// app/(dashboard)/rsvp/page.tsx
+"use client";
+
+import { useState, useEffect } from 'react';
+import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/config';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { useRSVP, useEvents } from '@/hooks/useFirebase';
+import { Loader2, Filter, Download, Link as LinkIcon, Copy } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+// Simple inline WhatsApp glyph (lucide-react has no brand icon for it)
+function WhatsAppIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+      <path d="M12.001 2C6.478 2 2 6.478 2 12c0 1.876.518 3.63 1.417 5.13L2 22l4.998-1.396A9.953 9.953 0 0 0 12.001 22C17.523 22 22 17.523 22 12S17.523 2 12.001 2zm0 18.03a8 8 0 0 1-4.29-1.24l-.307-.186-3.11.868.856-3.08-.202-.316A7.996 7.996 0 1 1 20 12a8.005 8.005 0 0 1-7.999 8.03z" />
+    </svg>
+  );
+}
+
+export default function RSVPPage() {
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [filter, setFilter] = useState('All');
+  const { rsvps, loading, updateRSVP } = useRSVP(selectedEvent);
+  const { events, loading: eventsLoading } = useEvents();
+
+  // Look up whichever invitation card exists for the selected event, directly
+  // from the 'invitations' collection (every invitation doc has an `eventId`
+  // field pointing back to its event) — no dependency on the event doc itself.
+  const [invitationId, setInvitationId] = useState<string | null>(null);
+  const [invitationLoading, setInvitationLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setInvitationId(null);
+      return;
+    }
+    setInvitationLoading(true);
+    setInvitationId(null);
+
+    const fetchInvitation = async () => {
+      try {
+        const q = query(
+          collection(db, 'invitations'),
+          where('eventId', '==', selectedEvent),
+          orderBy('createdAt', 'desc'),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        setInvitationId(snap.empty ? null : snap.docs[0].id);
+      } catch (err) {
+        console.error('Error looking up invitation for this event:', err);
+        setInvitationId(null);
+      } finally {
+        setInvitationLoading(false);
+      }
+    };
+    fetchInvitation();
+  }, [selectedEvent]);
+
+  const handleStatusUpdate = async (id: string, status: string) => {
+    try {
+      await updateRSVP(id, { status });
+      toast.success('RSVP status updated');
+    } catch (error) {
+      toast.error('Error updating status');
+    }
+  };
+
+  // Builds a personalized invitation link for a single guest, pointing at
+  // the actual invitation card found above for this event.
+  const buildGuestLink = (rsvp: any) => {
+    const base = typeof window !== 'undefined' ? window.location.origin : '';
+    const params = new URLSearchParams({
+      guest: rsvp.name || 'Guest',
+      rsvpId: rsvp.id,
+    });
+    return `${base}/invitations/view/${invitationId}?${params.toString()}`;
+  };
+
+  const handleCopyLink = (rsvp: any) => {
+    const link = buildGuestLink(rsvp);
+    navigator.clipboard.writeText(link);
+    toast.success(`Link copied for ${rsvp.name || 'guest'}`);
+  };
+
+  const handleSendWhatsApp = (rsvp: any) => {
+    if (!rsvp.phone) {
+      toast.error('No phone number on file for this guest');
+      return;
+    }
+    const eventName = events.find((e: any) => e.id === selectedEvent)?.eventName || 'our event';
+    const link = buildGuestLink(rsvp);
+    const message = `Hi ${rsvp.name || 'there'}! You're invited to ${eventName} 🎉\nHere's your personal invitation:\n${link}`;
+
+    // Normalize phone: strip spaces/dashes/parentheses, keep leading +
+    const cleanPhone = rsvp.phone.replace(/[^\d+]/g, '');
+    const whatsappUrl = `https://wa.me/${cleanPhone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  const handleSendWhatsAppAll = () => {
+    const withPhone = filteredRSVPs.filter((r: any) => r.phone);
+    if (withPhone.length === 0) {
+      toast.error('No guests with a phone number in the current list');
+      return;
+    }
+    if (!invitationId) {
+      toast.error('Generate the invitation card first (Invitation Builder → Generate Invitation)');
+      return;
+    }
+
+    toast.success(`Opening WhatsApp for ${withPhone.length} guest(s)... allow pop-ups if your browser blocks them.`);
+
+    // wa.me only supports one chat at a time (no true bulk-send without the
+    // WhatsApp Business API), so we open each guest's pre-filled chat with a
+    // short stagger to avoid the browser blocking a burst of popups.
+    withPhone.forEach((rsvp: any, i: number) => {
+      setTimeout(() => handleSendWhatsApp(rsvp), i * 700);
+    });
+  };
+
+  const exportData = () => {
+    const csv = [
+      ['Name', 'Email', 'Phone', 'Guests', 'Adults', 'Children', 'Status', 'Personal Link'],
+      ...rsvps.map((r: any) => [
+        r.name || 'N/A',
+        r.email || 'N/A',
+        r.phone || 'N/A',
+        r.guests || 0,
+        r.adults || 0,
+        r.children || 0,
+        r.status || 'Pending',
+        selectedEvent ? buildGuestLink(r) : '',
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rsvp_data_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success('Data exported successfully!');
+  };
+
+  const filteredRSVPs = rsvps.filter((r: any) => {
+    if (filter === 'All') return true;
+    return r.status === filter;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
+        <h1 className="text-3xl font-bold">RSVP Management</h1>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={handleSendWhatsAppAll}
+            disabled={!selectedEvent || filteredRSVPs.length === 0}
+          >
+            <WhatsAppIcon className="mr-2 h-4 w-4" />
+            Send to All via WhatsApp
+          </Button>
+          <Button variant="outline" onClick={exportData}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+
+      {selectedEvent && invitationLoading && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 px-1">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Checking for an invitation card...
+        </div>
+      )}
+
+      {selectedEvent && !invitationLoading && invitationId && (
+        <div className="flex items-center justify-between gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-300 min-w-0">
+            <LinkIcon className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Invitation card is ready — each guest below has their own personal link to it.
+            </span>
+          </div>
+          <a
+            href={`${typeof window !== 'undefined' ? window.location.origin : ''}/invitations/view/${invitationId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-green-700 dark:text-green-300 underline shrink-0"
+          >
+            View card
+          </a>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>RSVP Responses</CardTitle>
+            <div className="flex gap-2">
+              <select
+                value={selectedEvent}
+                onChange={(e) => setSelectedEvent(e.target.value)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+              >
+                <option value="">Select Event</option>
+                {events.map((event: any) => (
+                  <option key={event.id} value={event.id}>
+                    {event.eventName}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+              >
+                <option value="All">All</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Pending">Pending</option>
+                <option value="Declined">Declined</option>
+              </select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!selectedEvent && (
+            <p className="text-sm text-amber-600 mb-3">
+              Select an event above to generate personal invitation links for guests.
+            </p>
+          )}
+          {selectedEvent && !invitationLoading && !invitationId && (
+            <p className="text-sm text-amber-600 mb-3">
+              No invitation card has been generated for this event yet — go to Invitation Builder and click "Generate Invitation" first, otherwise guest links won't open a real card.
+            </p>
+          )}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Total Guests</TableHead>
+                <TableHead>Adults</TableHead>
+                <TableHead>Children</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Invite Link</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredRSVPs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8 text-gray-500">
+                    No RSVP responses found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredRSVPs.map((rsvp: any) => (
+                  <TableRow key={rsvp.id}>
+                    <TableCell className="font-medium">{rsvp.name || 'N/A'}</TableCell>
+                    <TableCell>{rsvp.email || 'N/A'}</TableCell>
+                    <TableCell>{rsvp.phone || 'N/A'}</TableCell>
+                    <TableCell>{rsvp.guests || 0}</TableCell>
+                    <TableCell>{rsvp.adults || 0}</TableCell>
+                    <TableCell>{rsvp.children || 0}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        rsvp.status === 'Confirmed'
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                          : rsvp.status === 'Pending'
+                          ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+                          : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
+                      }`}>
+                        {rsvp.status || 'Pending'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleCopyLink(rsvp)}
+                          disabled={!selectedEvent}
+                          title="Copy personal invitation link"
+                          className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleSendWhatsApp(rsvp)}
+                          disabled={!selectedEvent}
+                          title="Send invitation via WhatsApp"
+                          className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <WhatsAppIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        value={rsvp.status || 'Pending'}
+                        onChange={(e) => handleStatusUpdate(rsvp.id, e.target.value)}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm bg-white"
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Confirmed">Confirmed</option>
+                        <option value="Declined">Declined</option>
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

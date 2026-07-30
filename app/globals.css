@@ -1,26 +1,388 @@
+/* app/globals.css */
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Your custom theme variables */
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --radius: 0.5rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
+
+@layer components {
+  /* Scrollbar Styles */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background-color: #f3f4f6;
+  }
+  
+  .dark .scrollbar-thin::-webkit-scrollbar-track {
+    background-color: #1f2937;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 9999px;
+  }
+  
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #4b5563;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #9ca3af;
+  }
+  
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #6b7280;
+  }
+
+  /* Card Styles */
+  .card {
+    background-color: white;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .card {
+    background-color: #1f2937;
+    border-color: #374151;
+  }
+
+  .card-hover {
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+
+  .card-hover:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: scale(1.01);
+  }
+
+  /* Input Styles */
+  .input {
+    width: 100%;
+    padding: 0.5rem 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background-color: white;
+    color: #111827;
+    transition: all 0.2s;
+  }
+
+  .dark .input {
+    border-color: #4b5563;
+    background-color: #1f2937;
+    color: #f9fafb;
+  }
+
+  .input:focus {
+    outline: none;
+    ring: 2px solid #3b82f6;
+    border-color: transparent;
+  }
+
+  .input-error {
+    border-color: #ef4444;
+  }
+
+  .input-error:focus {
+    ring-color: #ef4444;
+  }
+
+  .input-success {
+    border-color: #10b981;
+  }
+
+  .input-success:focus {
+    ring-color: #10b981;
+  }
+
+  /* Badge Styles */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    padding: 0.125rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: colors;
+  }
+
+  .badge-primary {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+
+  .dark .badge-primary {
+    background-color: #1e3a8a;
+    color: #bfdbfe;
+  }
+
+  .badge-success {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  .dark .badge-success {
+    background-color: #064e3b;
+    color: #a7f3d0;
+  }
+
+  .badge-danger {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+
+  .dark .badge-danger {
+    background-color: #7f1d1d;
+    color: #fecaca;
+  }
+
+  .badge-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+
+  .dark .badge-warning {
+    background-color: #78350f;
+    color: #fde68a;
+  }
+
+  .badge-gray {
+    background-color: #f3f4f6;
+    color: #1f2937;
+  }
+
+  .dark .badge-gray {
+    background-color: #374151;
+    color: #d1d5db;
+  }
+}
+
+@layer utilities {
+  /* Text */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Gradients */
+  .bg-gradient-primary {
+    background-image: linear-gradient(to right, #2563eb, #4f46e5);
+  }
+
+  .bg-gradient-success {
+    background-image: linear-gradient(to right, #10b981, #34d399);
+  }
+
+  .bg-gradient-danger {
+    background-image: linear-gradient(to right, #ef4444, #f43f5e);
+  }
+
+  .bg-gradient-warning {
+    background-image: linear-gradient(to right, #f59e0b, #f97316);
+  }
+
+  .bg-gradient-purple {
+    background-image: linear-gradient(to right, #8b5cf6, #ec4899);
+  }
+
+  /* Glass Effect */
+  .glass {
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-dark {
+    background-color: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+  }
+
+  /* Shadows */
+  .shadow-soft {
+    box-shadow: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04);
+  }
+
+  .shadow-medium {
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.1), 0 12px 30px -4px rgba(0, 0, 0, 0.05);
+  }
+
+  .shadow-hard {
+    box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.15), 0 20px 40px -6px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Toast Customization */
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast-success {
+  background-color: #10b981;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.toast-error {
+  background-color: #ef4444;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.toast-info {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Loading Spinner */
+.spinner {
+  display: inline-block;
+  height: 1rem;
+  width: 1rem;
+  animation: spin 1s linear infinite;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+  
+  body {
+    background-color: white;
+    color: black;
+  }
+}
+
+/* Custom Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseSlow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulseSlow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
