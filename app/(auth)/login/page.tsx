@@ -72,27 +72,24 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            {/* Using regular img tag with correct file name */}
-            <div className="w-14 h-14 flex-shrink-0">
-              <img 
-                src="/EventFlux_Logo" 
-                alt="EventFlux Logo"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="flex flex-col items-start">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">EventFlux</h1>
-              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium tracking-wider">ERP</span>
-            </div>
-          </div>
-          <p className="text-gray-600 dark:text-gray-400">Event Management ERP System</p>
-        </div>
-
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Welcome Back</CardTitle>
+            {/* Logo and Name inside Card Header */}
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <div className="w-12 h-12 flex-shrink-0">
+                <img
+                  src="/Logo.png"
+                  alt="EventFlux Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <div className="flex flex-col items-start">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EventFlux</h1>
+
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Event Management ERP System</p>
+            <CardTitle className="text-xl mt-2">Welcome Back</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

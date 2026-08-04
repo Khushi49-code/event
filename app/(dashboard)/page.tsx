@@ -1,11 +1,11 @@
-// app/(dashboard)/page.tsx (Updated with chart components)
+// app/(dashboard)/page.tsx
 "use client";
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { useEvents, useAnalytics } from '@/hooks/useFirebase';
+import { useEvents, useAnalytics, useWeeklyTrend, useEventsOverview, useRecentActivity } from '@/hooks/useFirebase';
 import { 
   Calendar, 
   Users, 
@@ -27,13 +27,18 @@ import {
   AttendanceChart,
   PieChartComponent,
   AnalyticsStats,
-  StatusDistribution
+  StatusDistribution,
+  EventStatsChart,
+  GuestChart
 } from '@/components/charts';
 
 export default function DashboardPage() {
   const { events, loading: eventsLoading } = useEvents();
   const [selectedEvent, setSelectedEvent] = useState('');
   const { stats, loading: statsLoading, fetchStats } = useAnalytics(selectedEvent);
+  const { trend: trendData, loading: trendLoading } = useWeeklyTrend(selectedEvent);
+  const { overview: eventsOverview, loading: overviewLoading } = useEventsOverview(events);
+  const { activity, loading: activityLoading } = useRecentActivity(selectedEvent);
 
   // Set first event as selected when events load
   useEffect(() => {
@@ -49,22 +54,20 @@ export default function DashboardPage() {
     }
   }, [selectedEvent, fetchStats]);
 
-  // Mock trend data
-  const trendData = [
-    { name: 'Mon', confirmed: 12, pending: 5, declined: 2 },
-    { name: 'Tue', confirmed: 18, pending: 7, declined: 3 },
-    { name: 'Wed', confirmed: 15, pending: 4, declined: 1 },
-    { name: 'Thu', confirmed: 22, pending: 8, declined: 4 },
-    { name: 'Fri', confirmed: 28, pending: 6, declined: 2 },
-    { name: 'Sat', confirmed: 35, pending: 9, declined: 5 },
-    { name: 'Sun', confirmed: 30, pending: 5, declined: 3 },
+  // Prepare attendance data with proper colors
+  const attendanceData = [
+    { name: 'Confirmed', value: stats?.confirmed || 0, color: '#10B981' },
+    { name: 'Pending', value: stats?.pending || 0, color: '#F59E0B' },
+    { name: 'Declined', value: stats?.declined || 0, color: '#EF4444' },
   ];
 
-  const attendanceData = [
-    { name: 'Confirmed', value: stats?.confirmed || 0 },
-    { name: 'Pending', value: stats?.pending || 0 },
-    { name: 'Declined', value: stats?.declined || 0 },
-  ];
+  // GuestChart expects { name, guests, confirmed, pending } per row
+  const guestChartData = eventsOverview.map((e) => ({
+    name: e.name,
+    guests: e.guests,
+    confirmed: e.confirmed,
+    pending: e.pending,
+  }));
 
   if (eventsLoading) {
     return (
@@ -78,7 +81,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Welcome to EventPro</h1>
             <p className="text-blue-100 mt-1">
@@ -124,14 +127,14 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Analytics Stats */}
+      {/* Analytics Stats - Pass stats directly */}
       <AnalyticsStats stats={stats} loading={statsLoading} />
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Charts Section - selected event */}
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-6">
         <AttendanceChart 
           data={trendData} 
-          title="Attendance Trend"
+          title="Attendance Trend (Last 7 Days)"
           type="area"
         />
         <StatusDistribution 
@@ -140,8 +143,20 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Charts Section - across all events */}
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-6">
+        <EventStatsChart 
+          data={eventsOverview}
+          title="Guests by Event"
+        />
+        <GuestChart 
+          data={guestChartData}
+          title="Guest Breakdown by Event"
+        />
+      </div>
+
       {/* Bottom Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-6">
         {/* Recent Activity */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -153,35 +168,50 @@ export default function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {[
-                { id: 1, user: 'John Doe', action: 'confirmed attendance', time: '5 min ago', status: 'Confirmed' },
-                { id: 2, user: 'Jane Smith', action: 'was added as a guest', time: '1 hour ago', status: 'Added' },
-                { id: 3, user: 'Robert Wilson', action: 'declined invitation', time: '2 hours ago', status: 'Declined' },
-              ].map((activity) => (
-                <div 
-                  key={activity.id} 
-                  className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0"
-                >
-                  <div>
-                    <p className="text-sm">
-                      <span className="font-medium">{activity.user}</span>
-                      {' '}{activity.action}
-                    </p>
-                    <p className="text-xs text-gray-500">{activity.time}</p>
+            {activityLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse flex items-center justify-between py-2">
+                    <div className="space-y-2 w-2/3">
+                      <div className="h-3 bg-gray-200 rounded w-full" />
+                      <div className="h-2 bg-gray-200 rounded w-1/3" />
+                    </div>
+                    <div className="h-5 bg-gray-200 rounded w-16" />
                   </div>
-                  <Badge 
-                    variant={
-                      activity.status === 'Confirmed' || activity.status === 'Added' 
-                        ? 'success' 
-                        : 'danger'
-                    }
+                ))}
+              </div>
+            ) : activity.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">No recent activity yet</p>
+            ) : (
+              <div className="space-y-4">
+                {activity.map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0"
                   >
-                    {activity.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">
+                        <span className="font-medium">{item.user}</span>
+                        {' '}{item.action}
+                      </p>
+                      <p className="text-xs text-gray-500">{item.time}</p>
+                    </div>
+                    <Badge 
+                      variant={
+                        item.status === 'Confirmed' || item.status === 'Added' 
+                          ? 'success' 
+                          : item.status === 'Pending'
+                          ? 'warning'
+                          : 'danger'
+                      }
+                      className="shrink-0"
+                    >
+                      {item.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -235,7 +265,7 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3 gap-4">
             {events.slice(0, 3).map((event: any) => (
               <Link key={event.id} href={`/events/${event.id}`}>
                 <div className="p-4 border rounded-lg hover:border-blue-500 hover:shadow-md transition-all cursor-pointer">

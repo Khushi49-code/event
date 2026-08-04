@@ -10,7 +10,7 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  Minus
+  Loader2
 } from 'lucide-react';
 
 interface AnalyticsStatsProps {
@@ -19,23 +19,25 @@ interface AnalyticsStatsProps {
     confirmed: number;
     pending: number;
     declined: number;
-    hotelGuests: number;
-    occupancy: number;
+    hotelGuests?: number;
+    occupancy?: number;
+    responseRate?: number;
+    confirmationRate?: number;
   } | null;
   loading?: boolean;
 }
 
 export function AnalyticsStats({ stats, loading = false }: AnalyticsStatsProps) {
-  // Show skeleton while loading OR when stats hasn't been fetched yet (null)
-  if (loading || !stats) {
+  // Show skeleton while loading
+  if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <Card key={i}>
             <CardContent className="p-6">
               <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-2" />
-                <div className="h-8 bg-gray-200 rounded w-1/3" />
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-2" />
+                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
               </div>
             </CardContent>
           </Card>
@@ -44,85 +46,131 @@ export function AnalyticsStats({ stats, loading = false }: AnalyticsStatsProps) 
     );
   }
 
+  // If no stats, show zeros
+  const displayStats = stats || {
+    totalGuests: 0,
+    confirmed: 0,
+    pending: 0,
+    declined: 0,
+    hotelGuests: 0,
+    occupancy: 0,
+    responseRate: 0,
+    confirmationRate: 0
+  };
+
   const items = [
     {
       label: 'Total Guests',
-      value: stats.totalGuests,
+      value: displayStats.totalGuests,
       icon: Users,
       color: 'bg-blue-500',
-      trend: '+12%',
-      trendUp: true
+      description: displayStats.totalGuests === 0 ? 'No guests yet' : 'Total registered guests'
     },
     {
       label: 'Confirmed',
-      value: stats.confirmed,
+      value: displayStats.confirmed,
       icon: CheckCircle,
       color: 'bg-green-500',
-      trend: '+8%',
-      trendUp: true
+      description: displayStats.totalGuests === 0 ? 'No confirmations yet' : `${displayStats.confirmationRate?.toFixed(1) || 0}% confirmation rate`
     },
     {
       label: 'Pending',
-      value: stats.pending,
+      value: displayStats.pending,
       icon: Calendar,
       color: 'bg-yellow-500',
-      trend: '-3%',
-      trendUp: false
+      description: displayStats.totalGuests === 0 ? 'No pending guests' : 'Awaiting response'
     },
     {
       label: 'Declined',
-      value: stats.declined,
+      value: displayStats.declined || 0,
       icon: XCircle,
       color: 'bg-red-500',
-      trend: '+2%',
-      trendUp: false
+      description: displayStats.totalGuests === 0 ? 'No declines' : `${((displayStats.declined || 0) / displayStats.totalGuests * 100).toFixed(1)}% declined`
     },
     {
       label: 'Hotel Guests',
-      value: stats.hotelGuests,
+      value: displayStats.hotelGuests || 0,
       icon: Hotel,
       color: 'bg-purple-500',
-      trend: '+5%',
-      trendUp: true
+      description: displayStats.totalGuests === 0 ? 'No hotel guests' : 'Need accommodation'
     },
     {
       label: 'Occupancy',
-      value: `${stats.occupancy.toFixed(1)}%`,
+      value: `${(displayStats.occupancy || 0).toFixed(1)}%`,
       icon: Hotel,
       color: 'bg-indigo-500',
-      trend: '+3%',
-      trendUp: true
+      description: displayStats.totalGuests === 0 ? 'No occupancy data' : 'Current occupancy rate'
     },
   ];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {items.map((item) => (
-        <Card key={item.label} className="hover:shadow-lg transition-shadow">
+        <Card key={item.label} className="hover:shadow-lg transition-shadow duration-200">
           <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{item.label}</p>
-                <p className="text-2xl font-bold mt-1">{item.value}</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {item.label}
+                </p>
+                <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100">
+                  {item.value}
+                </p>
+                {item.description && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    {item.description}
+                  </p>
+                )}
               </div>
-              <div className={`${item.color} p-3 rounded-lg text-white`}>
+              <div className={`${item.color} p-3 rounded-lg text-white shrink-0`}>
                 <item.icon size={24} />
               </div>
             </div>
             <div className="mt-2 flex items-center gap-1 text-xs">
-              {item.trendUp ? (
-                <TrendingUp className="h-3 w-3 text-green-500" />
+              {displayStats.totalGuests === 0 ? (
+                <span className="text-gray-400">No data yet</span>
               ) : (
-                <TrendingDown className="h-3 w-3 text-red-500" />
+                <span className="text-gray-400">Updated recently</span>
               )}
-              <span className={item.trendUp ? 'text-green-500' : 'text-red-500'}>
-                {item.trend}
-              </span>
-              <span className="text-gray-500">from last week</span>
             </div>
           </CardContent>
         </Card>
       ))}
+
+      {/* Response Rate Card */}
+      <Card className="hover:shadow-lg transition-shadow duration-200">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                Response Rate
+              </p>
+              <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100">
+                {(displayStats.responseRate || 0).toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                {displayStats.totalGuests === 0 
+                  ? 'No guests yet' 
+                  : `${(displayStats.confirmed || 0) + (displayStats.declined || 0)} of ${displayStats.totalGuests} responded`}
+              </p>
+            </div>
+            <div className="bg-teal-500 p-3 rounded-lg text-white shrink-0">
+              <Users size={24} />
+            </div>
+          </div>
+          <div className="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div 
+              className="bg-teal-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${displayStats.responseRate || 0}%` }}
+            />
+          </div>
+          {displayStats.totalGuests === 0 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
+              Add guests to see response rate
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

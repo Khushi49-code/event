@@ -1,4 +1,3 @@
-// app/(dashboard)/accommodation/page.tsx
 "use client";
 
 import { useState } from 'react';
@@ -369,113 +368,116 @@ export default function AccommodationPage() {
               <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Guest Name</TableHead>
-                  <TableHead>Hotel</TableHead>
-                  <TableHead>Room Type</TableHead>
-                  <TableHead>Room Number</TableHead>
-                  <TableHead>Check-in</TableHead>
-                  <TableHead>Check-out</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Assign Room</TableHead>
-                  <TableHead>Notify</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {accommodations.length === 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-gray-500">
-                      {selectedEvent
-                        ? 'No accommodation bookings found for this event yet.'
-                        : 'Select an event to see bookings.'}
-                    </TableCell>
+                    <TableHead>Guest Name</TableHead>
+                    <TableHead>Hotel</TableHead>
+                    <TableHead>Room Type</TableHead>
+                    <TableHead>Room Number</TableHead>
+                    <TableHead>Check-in</TableHead>
+                    <TableHead>Check-out</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assign Room</TableHead>
+                    <TableHead>Notify</TableHead>
                   </TableRow>
-                ) : (
-                  accommodations.map((acc: any) => (
-                    <TableRow key={acc.id}>
-                      <TableCell className="font-medium">{acc.guestName}</TableCell>
-                      <TableCell>{acc.hotelName || 'N/A'}</TableCell>
-                      <TableCell>{acc.roomType}</TableCell>
-                      <TableCell>{acc.roomNumber || 'Not assigned'}</TableCell>
-                      <TableCell>{acc.checkIn}</TableCell>
-                      <TableCell>{acc.checkOut}</TableCell>
-                      <TableCell>
-                        <select
-                          value={acc.status || 'Confirmed'}
-                          onChange={(e) => handleStatusChange(acc.id, e.target.value)}
-                          className="px-2 py-1 border rounded text-xs bg-white dark:bg-gray-800"
-                        >
-                          <option value="Confirmed">Confirmed</option>
-                          <option value="Pending">Pending</option>
-                          <option value="Cancelled">Cancelled</option>
-                          <option value="Checked-in">Checked-in</option>
-                          <option value="Checked-out">Checked-out</option>
-                        </select>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            placeholder="Room #"
-                            value={roomInputs[acc.id] ?? ''}
-                            onChange={(e) => setRoomInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleRoomAssign(acc.id);
-                            }}
-                            className="w-20 px-2 py-1 border rounded text-sm"
-                          />
-                          <button
-                            onClick={() => handleRoomAssign(acc.id)}
-                            title="Save room number"
-                            className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
+                </TableHeader>
+                <TableBody>
+                  {accommodations.length === 0 ? (
+                    <TableRow>
+                      {/* FIX: Using td instead of TableCell for colSpan support */}
+                      <td colSpan={9} className="text-center py-8 text-gray-500">
+                        {selectedEvent
+                          ? 'No accommodation bookings found for this event yet.'
+                          : 'Select an event to see bookings.'}
+                      </td>
+                    </TableRow>
+                  ) : (
+                    accommodations.map((acc: any) => (
+                      <TableRow key={acc.id}>
+                        <TableCell className="font-medium">{acc.guestName}</TableCell>
+                        <TableCell>{acc.hotelName || 'N/A'}</TableCell>
+                        <TableCell>{acc.roomType}</TableCell>
+                        <TableCell>{acc.roomNumber || 'Not assigned'}</TableCell>
+                        <TableCell>{acc.checkIn}</TableCell>
+                        <TableCell>{acc.checkOut}</TableCell>
+                        <TableCell>
+                          <select
+                            value={acc.status || 'Confirmed'}
+                            onChange={(e) => handleStatusChange(acc.id, e.target.value)}
+                            className="px-2 py-1 border rounded text-xs bg-white dark:bg-gray-800"
                           >
-                            <Save className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {acc.guestPhone ? (
-                          <button
-                            onClick={() => handleSendWhatsApp(acc)}
-                            title="Send hotel details via WhatsApp"
-                            className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600"
-                          >
-                            <WhatsAppIcon className="h-4 w-4" />
-                          </button>
-                        ) : (
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="Checked-in">Checked-in</option>
+                            <option value="Checked-out">Checked-out</option>
+                          </select>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              placeholder="Add phone"
-                              value={phoneFixInputs[acc.id] ?? ''}
-                              onChange={(e) => setPhoneFixInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                              placeholder="Room #"
+                              value={roomInputs[acc.id] ?? ''}
+                              onChange={(e) => setRoomInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleFixPhone(acc.id);
+                                if (e.key === 'Enter') handleRoomAssign(acc.id);
                               }}
-                              className="w-24 px-2 py-1 border rounded text-xs"
+                              className="w-20 px-2 py-1 border rounded text-sm"
                             />
                             <button
-                              onClick={() => handleFixPhone(acc.id)}
-                              title="Save phone number"
+                              onClick={() => handleRoomAssign(acc.id)}
+                              title="Save room number"
                               className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
-                              disabled={fixingPhone === acc.id}
                             >
-                              {fixingPhone === acc.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Save className="h-4 w-4" />
-                              )}
+                              <Save className="h-4 w-4" />
                             </button>
                           </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                        </TableCell>
+                        <TableCell>
+                          {acc.guestPhone ? (
+                            <button
+                              onClick={() => handleSendWhatsApp(acc)}
+                              title="Send hotel details via WhatsApp"
+                              className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600"
+                            >
+                              <WhatsAppIcon className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                placeholder="Add phone"
+                                value={phoneFixInputs[acc.id] ?? ''}
+                                onChange={(e) => setPhoneFixInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleFixPhone(acc.id);
+                                }}
+                                className="w-24 px-2 py-1 border rounded text-xs"
+                              />
+                              <button
+                                onClick={() => handleFixPhone(acc.id)}
+                                title="Save phone number"
+                                className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
+                                disabled={fixingPhone === acc.id}
+                              >
+                                {fixingPhone === acc.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Save className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

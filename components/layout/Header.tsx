@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/providers/AuthProvider';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
+import { auth } from '@/lib/config';
 import {
   Bell,
   Search,

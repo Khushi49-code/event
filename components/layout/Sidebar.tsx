@@ -85,28 +85,28 @@ export default function Sidebar() {
         {/* Logo Section */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           {!collapsed ? (
-            <Link href="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 flex-shrink-0">
-                <img 
-                  src="/EventFlux_Logo.png" 
-                  alt="EventFlux Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xl font-bold tracking-tight text-white">EventFlux</span>
-                <span className="text-[10px] text-blue-400 font-medium tracking-wider">ERP</span>
+            <Link href="/" className="inline-flex items-center gap-3">
+              <img
+                src="/Logo.png"
+                alt="EventFlux Logo"
+                className="w-10 h-10 object-contain flex-shrink-0"
+              />
+              <div className="flex flex-col leading-tight">
+                <span className="text-xl font-bold tracking-tight text-white leading-none">
+                  EventFlux
+                </span>
+                <span className="text-[10px] text-blue-400 font-semibold tracking-widest uppercase mt-1">
+                  ERP
+                </span>
               </div>
             </Link>
           ) : (
             <Link href="/" className="mx-auto">
-              <div className="w-10 h-10">
-                <img 
-                  src="/EventFlux_Logo.png" 
-                  alt="EventFlux Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
+              <img
+                src="/Logo.png"
+                alt="EventFlux Logo"
+                className="w-10 h-10 object-contain"
+              />
             </Link>
           )}
           <button

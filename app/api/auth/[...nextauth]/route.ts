@@ -1,10 +1,9 @@
-// app/api/auth/[...nextauth]/route.ts
-import NextAuth from 'next-auth';
+import NextAuth, { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
+import { auth } from '@/lib/config'; // Changed from '@/lib/firebase/config'
 
-const handler = NextAuth({
+export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
@@ -23,32 +22,47 @@ const handler = NextAuth({
             credentials.email,
             credentials.password
           );
-          
+
           const user = userCredential.user;
-          
+
           return {
             id: user.uid,
             email: user.email,
-            name: user.displayName || 'User',
+            name: user.displayName || user.email?.split('@')[0] || 'User',
           };
         } catch (error: any) {
-          throw new Error(error.message || 'Invalid credentials');
+          console.error('Auth error:', error);
+
+          // Better error messages
+          if (error.code === 'auth/user-not-found') {
+            throw new Error('No user found with this email');
+          } else if (error.code === 'auth/wrong-password') {
+            throw new Error('Incorrect password');
+          } else if (error.code === 'auth/too-many-requests') {
+            throw new Error('Too many failed attempts. Please try again later');
+          } else {
+            throw new Error(error.message || 'Invalid credentials');
+          }
         }
       }
     })
   ],
   callbacks: {
-    async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.sub as string;
-      }
-      return session;
-    },
     async jwt({ token, user }) {
       if (user) {
-        token.sub = user.id;
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
       }
       return token;
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.id = token.id as string;
+        session.user.email = token.email as string;
+        session.user.name = token.name as string;
+      }
+      return session;
     }
   },
   pages: {
@@ -56,10 +70,11 @@ const handler = NextAuth({
     error: '/login',
   },
   session: {
-    strategy: 'jwt',
+    strategy: 'jwt' as const,
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   secret: process.env.NEXTAUTH_SECRET,
-});
+};
 
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };

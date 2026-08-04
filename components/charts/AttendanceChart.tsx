@@ -12,6 +12,7 @@ import {
   Legend,
   ResponsiveContainer,
   Line,
+  LineChart,
   ComposedChart,
   Area,
   AreaChart

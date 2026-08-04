@@ -2,10 +2,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, User, Moon, Sun, Menu, X } from 'lucide-react';
+import Link from 'next/link';
+import { Bell, Search, User, Moon, Sun, Menu, X, Settings, LogOut, ChevronDown } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePathname } from 'next/navigation';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/lib/config';
+import toast from 'react-hot-toast';
 
 const pageTitles: { [key: string]: string } = {
   '/': 'Dashboard',
@@ -24,7 +28,9 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const [notifications, setNotifications] = useState([
     { id: 1, message: 'New RSVP from John Doe', time: '5 min ago', read: false },
@@ -47,11 +53,24 @@ export default function Navbar() {
     );
   };
 
-  // Close dropdown when clicking outside of it
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      toast.success('Logged out successfully');
+      setIsUserMenuOpen(false);
+    } catch (error) {
+      toast.error('Error logging out');
+    }
+  };
+
+  // Close dropdowns when clicking outside of them
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
         setIsNotifOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -143,14 +162,64 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* User Profile */}
-          <div className="flex items-center gap-2 pl-2 border-l border-gray-200 dark:border-gray-700">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-              {user?.displayName?.[0] || 'U'}
-            </div>
-            <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
-              {user?.displayName || 'User'}
-            </span>
+          {/* User Profile Dropdown */}
+          <div className="relative pl-2 border-l border-gray-200 dark:border-gray-700" ref={userMenuRef}>
+            <button
+              onClick={() => setIsUserMenuOpen(prev => !prev)}
+              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                {user?.displayName?.[0] || 'U'}
+              </div>
+              <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {user?.displayName || 'User'}
+              </span>
+              <ChevronDown
+                size={16}
+                className={`hidden md:block text-gray-400 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {/* User Dropdown Menu */}
+            {isUserMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
+                <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {user?.displayName || 'User'}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    {user?.email || ''}
+                  </p>
+                </div>
+                <div className="py-1">
+                  <Link
+                    href="/profile"
+                    onClick={() => setIsUserMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <User size={16} />
+                    Profile
+                  </Link>
+                  <Link
+                    href="/settings"
+                    onClick={() => setIsUserMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <Settings size={16} />
+                    Settings
+                  </Link>
+                </div>
+                <div className="py-1 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <LogOut size={16} />
+                    Logout
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

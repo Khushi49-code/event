@@ -56,7 +56,7 @@ export function PieChartComponent({
                 cy="50%"
                 labelLine={showLabels}
                 label={showLabels ? ({ name, percent }) => 
-                  `${name} ${(percent * 100).toFixed(0)}%` : undefined
+                  `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : undefined
                 }
                 outerRadius={80}
                 fill="#8884d8"

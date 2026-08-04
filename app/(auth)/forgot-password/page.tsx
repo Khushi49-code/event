@@ -8,7 +8,7 @@ import { auth } from '../../../lib/config';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Loader2, Mail, ArrowLeft, Calendar } from 'lucide-react';
+import { Loader2, Mail, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function ForgotPasswordPage() {
@@ -39,16 +39,23 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <Calendar className="h-10 w-10 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">EventPro</h1>
-          </div>
-        </div>
-
         <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl text-center">Reset Password</CardTitle>
+          <CardHeader className="text-center">
+            {/* Logo and Name inside Card Header */}
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <div className="w-12 h-12 flex-shrink-0">
+                <img
+                  src="/Logo.png"
+                  alt="EventFlux Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <div className="flex flex-col items-start">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EventFlux</h1>
+                
+              </div>
+            </div>
+            <CardTitle className="text-xl mt-2">Reset Password</CardTitle>
           </CardHeader>
           <CardContent>
             {sent ? (

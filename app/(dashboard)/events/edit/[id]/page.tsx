@@ -14,7 +14,7 @@ export default function EditEventPage() {
   const router = useRouter();
   const eventId = params.id as string;
   
-  const { getEventById, updateEvent, loading } = useEvents();
+  const { getEvent, updateEvent, loading } = useEvents();
   const [formData, setFormData] = useState({
     eventName: '',
     eventType: '',
@@ -31,7 +31,8 @@ export default function EditEventPage() {
   useEffect(() => {
     const fetchEvent = async () => {
       try {
-        const event = await getEventById(eventId);
+        // Use getEvent instead of getEventById
+        const event = await getEvent(eventId);
         if (event) {
           setFormData({
             eventName: event.eventName || '',
@@ -52,7 +53,7 @@ export default function EditEventPage() {
       }
     };
     fetchEvent();
-  }, [eventId, getEventById]);
+  }, [eventId, getEvent]); // Add getEvent to dependencies
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

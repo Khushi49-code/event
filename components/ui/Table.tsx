@@ -1,7 +1,7 @@
 // components/ui/Table.tsx
 "use client";
 
-import { ReactNode, useState } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ---------- Base Table Primitives ----------
@@ -32,31 +32,47 @@ export function TableRow({
   children,
   className = '',
   onClick,
-}: {
-  children: ReactNode;
-  className?: string;
-  onClick?: () => void;
-}) {
+  ...props
+}: React.HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
       onClick={onClick}
       className={`${onClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800' : ''} ${className}`}
+      {...props}
     >
       {children}
     </tr>
   );
 }
 
-export function TableHead({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function TableHead({
+  children,
+  className = '',
+  ...props
+}: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <th className={`px-4 py-3 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wide ${className}`}>
+    <th
+      className={`px-4 py-3 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wide ${className}`}
+      {...props}
+    >
       {children}
     </th>
   );
 }
 
-export function TableCell({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 text-gray-800 dark:text-gray-200 ${className}`}>{children}</td>;
+export function TableCell({
+  children,
+  className = '',
+  ...props
+}: React.TdHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <td
+      className={`px-4 py-3 text-gray-800 dark:text-gray-200 ${className}`}
+      {...props}
+    >
+      {children}
+    </td>
+  );
 }
 
 // ---------- SortableTable ----------
@@ -344,13 +360,28 @@ export function CompactTableRow({ children, className = '' }: { children: ReactN
   return <tr className={`border-b border-gray-100 dark:border-gray-800 last:border-0 ${className}`}>{children}</tr>;
 }
 
-export function CompactTableCell({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <td className={`px-2 py-1.5 text-gray-800 dark:text-gray-200 ${className}`}>{children}</td>;
+export function CompactTableCell({
+  children,
+  className = '',
+  ...props
+}: React.TdHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <td className={`px-2 py-1.5 text-gray-800 dark:text-gray-200 ${className}`} {...props}>
+      {children}
+    </td>
+  );
 }
 
-export function CompactTableHeadCell({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function CompactTableHeadCell({
+  children,
+  className = '',
+  ...props
+}: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-300 text-[11px] uppercase tracking-wide ${className}`}>
+    <th
+      className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-300 text-[11px] uppercase tracking-wide ${className}`}
+      {...props}
+    >
       {children}
     </th>
   );

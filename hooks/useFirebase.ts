@@ -14,7 +14,9 @@ import {
   updateDoc,
   addDoc,
   getDoc,
+  limit,
   Timestamp,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db, storage } from '@/lib/config';
 import {
@@ -173,7 +175,6 @@ export function useFileUpload() {
 
   const uploadFile = useCallback((file: File, path: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // Reset states
       setUploading(true);
       setProgress(0);
       setError(null);
@@ -186,20 +187,17 @@ export function useFileUpload() {
         uploadTask.on(
           'state_changed',
           (snapshot) => {
-            // Calculate progress
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
             setProgress(progress);
             console.log(`Upload progress: ${progress.toFixed(2)}%`);
           },
           (err) => {
-            // Handle error
             console.error('Upload error:', err);
             setError(err.message);
             setUploading(false);
             reject(err);
           },
           async () => {
-            // Handle successful upload
             try {
               const url = await getDownloadURL(uploadTask.snapshot.ref);
               console.log('Upload completed, URL:', url);
@@ -309,6 +307,268 @@ export function useAnalytics(eventId: string) {
   }, [eventId]);
 
   return { stats, loading, error, fetchStats };
+}
+
+// ---------- useWeeklyTrend ----------
+export interface WeeklyTrendPoint {
+  name: string;
+  confirmed: number;
+  pending: number;
+  declined: number;
+}
+
+export function useWeeklyTrend(eventId: string) {
+  const [trend, setTrend] = useState<WeeklyTrendPoint[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!eventId) {
+      setTrend([]);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(collection(db, 'guests'), where('eventId', '==', eventId));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const days: { time: number; label: string }[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          d.setHours(0, 0, 0, 0);
+          days.push({ time: d.getTime(), label: d.toLocaleDateString('en-US', { weekday: 'short' }) });
+        }
+
+        const buckets: WeeklyTrendPoint[] = days.map((d) => ({
+          name: d.label,
+          confirmed: 0,
+          pending: 0,
+          declined: 0,
+        }));
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const createdAt: Timestamp | undefined = data.createdAt;
+          if (!createdAt?.toDate) return;
+
+          const created = createdAt.toDate();
+          created.setHours(0, 0, 0, 0);
+          const createdTime = created.getTime();
+
+          const dayIndex = days.findIndex((d) => d.time === createdTime);
+          if (dayIndex === -1) return;
+
+          const status = data.rsvpStatus || 'pending';
+          if (status === 'confirmed') buckets[dayIndex].confirmed++;
+          else if (status === 'declined') buckets[dayIndex].declined++;
+          else buckets[dayIndex].pending++;
+        });
+
+        setTrend(buckets);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('useWeeklyTrend error:', err);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [eventId]);
+
+  return { trend, loading };
+}
+
+// ---------- useEventsOverview ----------
+export interface EventOverviewPoint {
+  name: string;
+  guests: number;
+  confirmed: number;
+  pending: number;
+}
+
+export function useEventsOverview(events: EventDoc[]) {
+  const [overview, setOverview] = useState<EventOverviewPoint[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!events.length) {
+      setOverview([]);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribe = onSnapshot(
+      collection(db, 'guests'),
+      (snapshot) => {
+        const counts: Record<string, { guests: number; confirmed: number; pending: number }> = {};
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const eventId = data.eventId;
+          if (!eventId) return;
+
+          if (!counts[eventId]) {
+            counts[eventId] = { guests: 0, confirmed: 0, pending: 0 };
+          }
+          counts[eventId].guests++;
+
+          const status = data.rsvpStatus || 'pending';
+          if (status === 'confirmed') counts[eventId].confirmed++;
+          else if (status !== 'declined') counts[eventId].pending++;
+        });
+
+        const data = events.slice(0, 6).map((event) => ({
+          name: event.eventName,
+          guests: counts[event.id]?.guests || 0,
+          confirmed: counts[event.id]?.confirmed || 0,
+          pending: counts[event.id]?.pending || 0,
+        }));
+
+        setOverview(data);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('useEventsOverview error:', err);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [events]);
+
+  return { overview, loading };
+}
+
+// ---------- FIXED useRecentActivity ----------
+export interface ActivityItem {
+  id: string;
+  user: string;
+  action: string;
+  time: string;
+  status: string;
+}
+
+function timeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+export function useRecentActivity(eventId: string, max: number = 5) {
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!eventId) {
+      setActivity([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const q = query(
+        collection(db, 'guests'),
+        where('eventId', '==', eventId)
+      );
+
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          let docs: Array<{ id: string; [key: string]: any }> = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }));
+
+          docs = docs.sort((a, b) => {
+            const getDate = (item: any): Date => {
+              if (item?.createdAt?.toDate) {
+                return item.createdAt.toDate();
+              }
+              if (item?.createdAt?.seconds) {
+                return new Date(item.createdAt.seconds * 1000);
+              }
+              if (typeof item?.createdAt === 'string') {
+                return new Date(item.createdAt);
+              }
+              if (item?.createdAt instanceof Date) {
+                return item.createdAt;
+              }
+              return new Date(0);
+            };
+            
+            const dateA = getDate(a);
+            const dateB = getDate(b);
+            return dateB.getTime() - dateA.getTime();
+          });
+
+          docs = docs.slice(0, max);
+
+          const items: ActivityItem[] = docs.map((doc) => {
+            const data = doc;
+            const status = data.rsvpStatus || 'pending';
+            const createdAt: Timestamp | undefined = data.createdAt;
+            
+            let time = '';
+            if (createdAt?.toDate) {
+              time = timeAgo(createdAt.toDate());
+            } else if (createdAt?.seconds) {
+              time = timeAgo(new Date(createdAt.seconds * 1000));
+            } else if (typeof createdAt === 'string') {
+              time = timeAgo(new Date(createdAt));
+            }
+
+            let action = 'was added as a guest';
+            let statusLabel = 'Added';
+            if (status === 'confirmed') {
+              action = 'confirmed attendance';
+              statusLabel = 'Confirmed';
+            } else if (status === 'declined') {
+              action = 'declined invitation';
+              statusLabel = 'Declined';
+            } else if (status === 'pending') {
+              statusLabel = 'Pending';
+            }
+
+            return {
+              id: doc.id,
+              user: data.name || 'Guest',
+              action,
+              time,
+              status: statusLabel,
+            };
+          });
+
+          setActivity(items);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('useRecentActivity error:', err);
+          setError(err.message);
+          setLoading(false);
+        }
+      );
+
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error('useRecentActivity setup error:', err);
+      setError(err.message);
+      setLoading(false);
+    }
+  }, [eventId, max]);
+
+  return { activity, loading, error };
 }
 
 // ---------- useRSVP ----------
@@ -468,7 +728,7 @@ export function useGuests(eventId: string) {
   return { guests, loading, fetchGuests };
 }
 
-// ---------- useWhatsApp ----------
+// ---------- FIXED useWhatsApp ----------
 export interface WhatsAppTemplate {
   id: string;
   name?: string;
@@ -483,7 +743,7 @@ export function useWhatsApp() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = collection(db, 'whatsappTemplates');
+    const q = query(collection(db, 'whatsappTemplates'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -503,15 +763,61 @@ export function useWhatsApp() {
   }, []);
 
   const saveTemplate = useCallback(async (data: Partial<WhatsAppTemplate>) => {
-    await addDoc(collection(db, 'whatsappTemplates'), data);
+    try {
+      // Use addDoc to auto-generate a unique ID
+      const docRef = await addDoc(collection(db, 'whatsappTemplates'), {
+        ...data,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+      return docRef.id;
+    } catch (error) {
+      console.error('Error saving template:', error);
+      throw error;
+    }
   }, []);
 
   const logMessage = useCallback(async (data: Record<string, any>) => {
-    await addDoc(collection(db, 'whatsappLogs'), {
-      ...data,
-      sentAt: new Date().toISOString(),
-    });
+    try {
+      // Use addDoc to auto-generate a unique ID
+      const docRef = await addDoc(collection(db, 'whatsappLogs'), {
+        ...data,
+        sentAt: data.sentAt || new Date().toISOString(),
+        createdAt: Timestamp.now(),
+        timestamp: Timestamp.now(),
+        // Add a unique client-side ID to prevent duplicates
+        logId: `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      });
+      return docRef.id;
+    } catch (error) {
+      console.error('Error logging message:', error);
+      throw error;
+    }
   }, []);
 
-  return { templates, loading, saveTemplate, logMessage };
+  // Optional: Add a function to check if a log already exists
+  const checkDuplicateLog = useCallback(async (guestId: string, eventId: string, content: string) => {
+    try {
+      const q = query(
+        collection(db, 'whatsappLogs'),
+        where('guestId', '==', guestId),
+        where('eventId', '==', eventId),
+        where('content', '==', content),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking duplicate log:', error);
+      return false;
+    }
+  }, []);
+
+  return { 
+    templates, 
+    loading, 
+    saveTemplate, 
+    logMessage,
+    checkDuplicateLog 
+  };
 }

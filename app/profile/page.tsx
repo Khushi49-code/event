@@ -9,10 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { updateProfile } from 'firebase/auth';
 import { auth } from '@/lib/config';
 import toast from 'react-hot-toast';
-import { User, Mail, Phone, Calendar, Save } from 'lucide-react';
+import { User, Mail, Phone, Calendar, Save, ArrowLeft, LayoutDashboard } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function ProfilePage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,8 +36,24 @@ export default function ProfilePage() {
     }
   };
 
+  const handleBackToDashboard = () => {
+    router.push('/dashboard');
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
+      {/* Back to Dashboard Button */}
+      <div className="mb-6">
+        <Button
+          variant="ghost"
+          onClick={handleBackToDashboard}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft size={18} />
+          Back to Dashboard
+        </Button>
+      </div>
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
         <p className="text-gray-600 mt-1">Manage your personal information</p>
@@ -61,7 +79,7 @@ export default function ProfilePage() {
             <Button 
               variant="outline" 
               className="mt-4"
-              onClick={() => toast.info('Photo upload coming soon!')}
+              onClick={() => toast('Photo upload coming soon!')}
             >
               Change Photo
             </Button>
@@ -154,6 +172,18 @@ export default function ProfilePage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Bottom Navigation - Optional: Add another Back to Dashboard button at bottom */}
+      <div className="mt-8 flex justify-center">
+        <Button
+          variant="outline"
+          onClick={handleBackToDashboard}
+          className="flex items-center gap-2"
+        >
+          <LayoutDashboard size={18} />
+          Go to Dashboard
+        </Button>
       </div>
     </div>
   );
