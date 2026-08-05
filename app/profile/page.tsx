@@ -1,4 +1,5 @@
-'use client';
+// app/(dashboard)/profile/page.tsx
+"use client";
 
 import { useState } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
@@ -7,11 +8,11 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { updateProfile } from 'firebase/auth';
+import { updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth } from '@/lib/config';
 import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import toast from 'react-hot-toast';
-import { User, Mail, Phone, Calendar, Save, ArrowLeft, LayoutDashboard, CreditCard, Crown, AlertTriangle, XCircle, Clock } from 'lucide-react';
+import { User, Mail, Calendar, Save, ArrowLeft, LayoutDashboard, CreditCard, Crown, AlertTriangle, XCircle, Clock, Key, Lock, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -21,6 +22,13 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Password change states
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
@@ -38,6 +46,54 @@ export default function ProfilePage() {
       toast.error('Failed to update profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!user || !user.email) {
+      toast.error('User email not found');
+      return;
+    }
+
+    // Validation
+    if (!currentPassword) {
+      toast.error('Please enter your current password');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      // Re-authenticate user
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      
+      // Update password
+      await updatePassword(user, newPassword);
+      
+      toast.success('Password changed successfully!');
+      setShowPasswordModal(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      console.error('Password change error:', error);
+      if (error.code === 'auth/wrong-password') {
+        toast.error('Current password is incorrect');
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error('Too many failed attempts. Please try again later.');
+      } else {
+        toast.error(error.message || 'Failed to change password');
+      }
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -201,6 +257,18 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {/* Change Password Button */}
+            <div className="pt-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowPasswordModal(true)}
+              >
+                <Key size={16} className="mr-2" />
+                Change Password
+              </Button>
+            </div>
+
             {/* Save Button */}
             {isEditing && (
               <Button 
@@ -265,7 +333,7 @@ export default function ProfilePage() {
         </Card>
       </div>
 
-      {/* Bottom Navigation - Optional: Add another Back to Dashboard button at bottom */}
+      {/* Bottom Navigation */}
       <div className="mt-8 flex justify-center">
         <Button
           variant="outline"
@@ -276,6 +344,105 @@ export default function ProfilePage() {
           Go to Dashboard
         </Button>
       </div>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-md w-full p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Lock size={20} />
+                Change Password
+              </h2>
+              <button
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setCurrentPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">
+                  Current Password *
+                </label>
+                <Input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter your current password"
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">
+                  New Password *
+                </label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password (min 6 characters)"
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">
+                  Confirm New Password *
+                </label>
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your new password"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="flex-1"
+                  onClick={handleChangePassword}
+                  disabled={passwordLoading}
+                >
+                  {passwordLoading ? (
+                    <>
+                      <Loader2 size={16} className="mr-2 animate-spin" />
+                      Changing...
+                    </>
+                  ) : (
+                    'Change Password'
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  disabled={passwordLoading}
+                >
+                  Cancel
+                </Button>
+              </div>
+
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                You will need to re-authenticate with your current password to change it.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
