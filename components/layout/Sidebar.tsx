@@ -22,7 +22,9 @@ import {
   Crown,
   AlertTriangle,
   XCircle,
-  Clock
+  Clock,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/AuthProvider';
@@ -33,28 +35,33 @@ import toast from 'react-hot-toast';
 import { Avatar } from '@/components/ui/Avatar';
 
 const menuItems = [
-  { name: 'Dashboard', icon: Home, href: '/' },
+  { name: 'Dashboard', icon: Home, href: '/dashboard' },
   { name: 'Events', icon: Calendar, href: '/events' },
   { name: 'Invitations', icon: Mail, href: '/invitations' },
   { name: 'Guests', icon: Users, href: '/guests' },
   { name: 'RSVP', icon: Gift, href: '/rsvp' },
   { name: 'Accommodation', icon: Hotel, href: '/accommodation' },
   { name: 'WhatsApp', icon: MessageSquare, href: '/whatsapp' },
-
 ];
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const { user } = useAuth();
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-      if (window.innerWidth < 1024) {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) {
         setCollapsed(true);
+        setIsOpen(false);
+      } else {
+        setCollapsed(false);
+        setIsOpen(true);
       }
     };
     checkMobile();
@@ -68,6 +75,20 @@ export default function Sidebar() {
       toast.success('Logged out successfully');
     } catch (error) {
       toast.error('Error logging out');
+    }
+  };
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setIsOpen(!isOpen);
+    } else {
+      setCollapsed(!collapsed);
+    }
+  };
+
+  const closeSidebar = () => {
+    if (isMobile) {
+      setIsOpen(false);
     }
   };
 
@@ -92,27 +113,56 @@ export default function Sidebar() {
       ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
       : '';
 
+  // Determine if sidebar should be visible
+  const isVisible = isMobile ? isOpen : true;
+  const isCollapsed = isMobile ? false : collapsed;
+
   return (
     <>
+      {/* Mobile Menu Toggle Button */}
+      <button
+        onClick={toggleSidebar}
+        className={cn(
+          "lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors",
+          isOpen && "hidden"
+        )}
+      >
+        <Menu size={24} />
+      </button>
+
       {/* Mobile overlay */}
-      {!collapsed && isMobile && (
+      {isMobile && isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setCollapsed(true)}
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
+          onClick={closeSidebar}
         />
       )}
 
       <div
         className={cn(
-          "bg-gray-900 text-white h-screen transition-all duration-300 flex flex-col fixed lg:relative z-50",
-          collapsed ? "w-20" : "w-64",
-          isMobile && collapsed && "-translate-x-full"
+          "bg-gray-900 text-white h-screen transition-all duration-300 flex flex-col fixed lg:relative z-50 shadow-xl",
+          isMobile ? (
+            isOpen ? "translate-x-0" : "-translate-x-full"
+          ) : (
+            collapsed ? "w-20" : "w-64"
+          ),
+          isMobile && "w-72"
         )}
       >
+        {/* Close button for mobile */}
+        {isMobile && (
+          <button
+            onClick={closeSidebar}
+            className="absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-800 transition-colors lg:hidden"
+          >
+            <X size={20} />
+          </button>
+        )}
+
         {/* Logo Section */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          {!collapsed ? (
-            <Link href="/" className="inline-flex items-center gap-3">
+          {!isCollapsed ? (
+            <Link href="/dashboard" className="inline-flex items-center gap-3" onClick={closeSidebar}>
               <img
                 src="/Logo.png"
                 alt="EventFlux Logo"
@@ -128,7 +178,7 @@ export default function Sidebar() {
               </div>
             </Link>
           ) : (
-            <Link href="/" className="mx-auto">
+            <Link href="/dashboard" className="mx-auto" onClick={closeSidebar}>
               <img
                 src="/Logo.png"
                 alt="EventFlux Logo"
@@ -136,21 +186,24 @@ export default function Sidebar() {
               />
             </Link>
           )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="p-1 hover:bg-gray-800 rounded-lg transition-colors flex-shrink-0"
-          >
-            {collapsed ? <Menu size={20} /> : <X size={20} />}
-          </button>
+          {!isMobile && (
+            <button
+              onClick={toggleSidebar}
+              className="p-1 hover:bg-gray-800 rounded-lg transition-colors flex-shrink-0"
+            >
+              {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+            </button>
+          )}
         </div>
 
         {/* Plan Status */}
         {!planLoading && (
           <div className="border-b border-gray-700">
-            {!collapsed ? (
+            {!isCollapsed ? (
               <Link
                 href="/settings/billing"
                 className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-gray-800 transition-colors group"
+                onClick={closeSidebar}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className={cn("w-2 h-2 rounded-full flex-shrink-0", planVisual.dot)} />
@@ -171,6 +224,7 @@ export default function Sidebar() {
               <Link
                 href="/settings/billing"
                 className="flex justify-center py-3 group relative"
+                onClick={closeSidebar}
               >
                 <div className="relative">
                   <PlanIcon size={18} className={planVisual.text} />
@@ -193,6 +247,7 @@ export default function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={closeSidebar}
                   className={cn(
                     "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative",
                     isActive
@@ -201,13 +256,13 @@ export default function Sidebar() {
                   )}
                 >
                   <item.icon size={20} className="flex-shrink-0" />
-                  {!collapsed && <span>{item.name}</span>}
-                  {collapsed && (
+                  {!isCollapsed && <span>{item.name}</span>}
+                  {isCollapsed && !isMobile && (
                     <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                       {item.name}
                     </div>
                   )}
-                  {isActive && !collapsed && (
+                  {isActive && !isCollapsed && (
                     <div className="ml-auto w-1.5 h-8 bg-white rounded-full" />
                   )}
                 </Link>
@@ -222,6 +277,7 @@ export default function Sidebar() {
           <div className="px-2 space-y-1">
             <Link
               href="/profile"
+              onClick={closeSidebar}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative",
                 pathname === '/profile'
@@ -230,8 +286,8 @@ export default function Sidebar() {
               )}
             >
               <UserCircle size={20} className="flex-shrink-0" />
-              {!collapsed && <span>Profile</span>}
-              {collapsed && (
+              {!isCollapsed && <span>Profile</span>}
+              {isCollapsed && !isMobile && (
                 <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                   Profile
                 </div>
@@ -239,6 +295,7 @@ export default function Sidebar() {
             </Link>
             <Link
               href="/settings"
+              onClick={closeSidebar}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative",
                 pathname === '/settings'
@@ -247,23 +304,23 @@ export default function Sidebar() {
               )}
             >
               <Settings size={20} className="flex-shrink-0" />
-              {!collapsed && <span>Settings</span>}
-              {collapsed && (
+              {!isCollapsed && <span>Settings</span>}
+              {isCollapsed && !isMobile && (
                 <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                   Settings
                 </div>
               )}
             </Link>
-          
           </div>
         </nav>
 
-        {/* User Info & Logout - FIXED VERSION */}
+        {/* User Info & Logout */}
         <div className="border-t border-gray-700 p-4">
           {/* User Info - Clickable Link to Profile */}
-          {!collapsed ? (
+          {!isCollapsed ? (
             <Link 
               href="/profile" 
+              onClick={closeSidebar}
               className="flex items-center gap-3 mb-3 hover:bg-gray-800 rounded-lg p-2 transition-colors group"
             >
               <Avatar
@@ -284,6 +341,7 @@ export default function Sidebar() {
             /* Collapsed mode - Avatar clickable */
             <Link 
               href="/profile" 
+              onClick={closeSidebar}
               className="flex justify-center mb-3 group relative"
             >
               <Avatar
@@ -303,12 +361,12 @@ export default function Sidebar() {
             onClick={handleLogout}
             className={cn(
               "flex items-center gap-3 text-gray-300 hover:text-white w-full px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors",
-              collapsed && "justify-center"
+              isCollapsed && "justify-center"
             )}
           >
             <LogOut size={20} />
-            {!collapsed && <span>Logout</span>}
-            {collapsed && (
+            {!isCollapsed && <span>Logout</span>}
+            {isCollapsed && !isMobile && (
               <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                 Logout
               </span>
