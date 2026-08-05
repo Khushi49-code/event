@@ -6,11 +6,14 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { updateProfile } from 'firebase/auth';
 import { auth } from '@/lib/config';
+import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import toast from 'react-hot-toast';
-import { User, Mail, Phone, Calendar, Save, ArrowLeft, LayoutDashboard } from 'lucide-react';
+import { User, Mail, Phone, Calendar, Save, ArrowLeft, LayoutDashboard, CreditCard, Crown, AlertTriangle, XCircle, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -18,6 +21,8 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
   const handleUpdateProfile = async () => {
     if (!user) return;
@@ -39,6 +44,43 @@ export default function ProfilePage() {
   const handleBackToDashboard = () => {
     router.push('/dashboard');
   };
+
+  // Visual config for plan status badge/card
+  const planStatusConfig: Record<string, { badge: 'success' | 'warning' | 'danger'; icon: any; message: string }> = {
+    ok: {
+      badge: 'success',
+      icon: Crown,
+      message: daysLeft !== null ? `${daysLeft} days remaining` : 'Active',
+    },
+    reminder: {
+      badge: 'warning',
+      icon: Clock,
+      message: `${daysLeft} days remaining — renewal coming up`,
+    },
+    warning: {
+      badge: 'warning',
+      icon: AlertTriangle,
+      message: `${daysLeft} days remaining — renew soon`,
+    },
+    urgent: {
+      badge: 'danger',
+      icon: AlertTriangle,
+      message: `${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining — renew now`,
+    },
+    expired: {
+      badge: 'danger',
+      icon: XCircle,
+      message: 'Plan expired — renew to restore access',
+    },
+    none: {
+      badge: 'warning',
+      icon: CreditCard,
+      message: 'No active plan',
+    },
+  };
+
+  const currentPlanConfig = planStatusConfig[planStatus] || planStatusConfig.none;
+  const PlanIcon = currentPlanConfig.icon;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -169,6 +211,55 @@ export default function ProfilePage() {
                 <Save size={16} className="mr-2" />
                 {loading ? 'Saving...' : 'Save Changes'}
               </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* My Plan Section */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              My Plan
+            </CardTitle>
+            <CardDescription>Your current subscription and renewal status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {planLoading ? (
+              <div className="animate-pulse space-y-3">
+                <div className="h-5 bg-gray-200 rounded w-1/3" />
+                <div className="h-4 bg-gray-200 rounded w-1/2" />
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <PlanIcon className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-gray-900">
+                        {planName || 'No Plan Selected'}
+                      </p>
+                      <Badge variant={currentPlanConfig.badge}>
+                        {planStatus === 'expired' ? 'Expired' : planStatus === 'none' ? 'Inactive' : 'Active'}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {currentPlanConfig.message}
+                    </p>
+                  </div>
+                </div>
+
+                <Link href="/settings/billing">
+                  <Button className="w-full sm:w-auto">
+                    <Crown className="mr-2 h-4 w-4" />
+                    {planStatus === 'none' ? 'Choose a Plan' : 'Upgrade Plan'}
+                  </Button>
+                </Link>
+              </div>
             )}
           </CardContent>
         </Card>

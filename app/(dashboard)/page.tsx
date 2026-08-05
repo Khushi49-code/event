@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useEvents, useAnalytics, useWeeklyTrend, useEventsOverview, useRecentActivity } from '@/hooks/useFirebase';
+import { PlanExpiryBanner } from '@/components/PlanExpiryBanner';
 import { 
   Calendar, 
   Users, 
@@ -79,6 +80,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Plan Expiry Renewal Reminder */}
+      <PlanExpiryBanner />
+
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white">
         <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-4">

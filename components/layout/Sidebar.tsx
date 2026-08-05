@@ -18,12 +18,17 @@ import {
   X,
   Gift,
   HelpCircle,
-  UserCircle
+  UserCircle,
+  Crown,
+  AlertTriangle,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/AuthProvider';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/config';
+import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import toast from 'react-hot-toast';
 import { Avatar } from '@/components/ui/Avatar';
 
@@ -43,6 +48,7 @@ export default function Sidebar() {
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
   const { user } = useAuth();
+  const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -64,6 +70,27 @@ export default function Sidebar() {
       toast.error('Error logging out');
     }
   };
+
+  // Visual config for the compact plan indicator
+  const planVisuals: Record<string, { dot: string; text: string; icon: any }> = {
+    ok: { dot: 'bg-green-500', text: 'text-green-400', icon: Crown },
+    reminder: { dot: 'bg-yellow-500', text: 'text-yellow-400', icon: Clock },
+    warning: { dot: 'bg-orange-500', text: 'text-orange-400', icon: AlertTriangle },
+    urgent: { dot: 'bg-red-500', text: 'text-red-400', icon: AlertTriangle },
+    expired: { dot: 'bg-red-600', text: 'text-red-400', icon: XCircle },
+    none: { dot: 'bg-gray-500', text: 'text-gray-400', icon: Crown },
+  };
+  const planVisual = planVisuals[planStatus] || planVisuals.none;
+  const PlanIcon = planVisual.icon;
+
+  const planLabel =
+    planStatus === 'none'
+      ? 'No active plan'
+      : planStatus === 'expired'
+      ? 'Plan expired'
+      : daysLeft !== null
+      ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
+      : '';
 
   return (
     <>
@@ -116,6 +143,46 @@ export default function Sidebar() {
             {collapsed ? <Menu size={20} /> : <X size={20} />}
           </button>
         </div>
+
+        {/* Plan Status */}
+        {!planLoading && (
+          <div className="border-b border-gray-700">
+            {!collapsed ? (
+              <Link
+                href="/settings/billing"
+                className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-gray-800 transition-colors group"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={cn("w-2 h-2 rounded-full flex-shrink-0", planVisual.dot)} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium truncate">
+                      {planName || 'No Plan'}
+                    </p>
+                    <p className={cn("text-[11px] truncate", planVisual.text)}>
+                      {planLabel}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-medium text-blue-400 group-hover:text-blue-300 whitespace-nowrap flex-shrink-0">
+                  {planStatus === 'none' ? 'Choose' : 'Upgrade'}
+                </span>
+              </Link>
+            ) : (
+              <Link
+                href="/settings/billing"
+                className="flex justify-center py-3 group relative"
+              >
+                <div className="relative">
+                  <PlanIcon size={18} className={planVisual.text} />
+                  <span className={cn("absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full", planVisual.dot)} />
+                </div>
+                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                  {planName || 'No Plan'} · {planLabel}
+                </div>
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 scrollbar-thin scrollbar-thumb-gray-700">
