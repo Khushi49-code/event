@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { Plus, Edit, Trash2, Eye, Search, Loader2, RefreshCw, Calendar, MapPin, Tag } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Search, Loader2, RefreshCw, Calendar, MapPin, Tag, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEvents } from '@/hooks/useFirebase';
 import toast from 'react-hot-toast';
@@ -13,6 +13,8 @@ import toast from 'react-hot-toast';
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const { events, loading, error, deleteEvent, refreshEvents } = useEvents();
 
   const handleDelete = async (id: string, eventName: string) => {
@@ -69,6 +71,23 @@ export default function EventsPage() {
       event.description?.toLowerCase().includes(searchLower)
     );
   });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentEvents = filteredEvents.slice(startIndex, endIndex);
+
+  // Reset to first page when search changes
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  // Handle page change
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
 
   // Get status color
   const getStatusColor = (status?: string) => {
@@ -163,7 +182,7 @@ export default function EventsPage() {
                 type="text"
                 placeholder="Search events..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -176,112 +195,233 @@ export default function EventsPage() {
               <p className="mt-2 text-gray-500">Loading events...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Venue</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredEvents.length === 0 ? (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-12">
-                        <div className="flex flex-col items-center">
-                          <Calendar className="h-12 w-12 text-gray-300 mb-3" />
-                          <p className="text-gray-500">
-                            {searchTerm ? 'No events match your search' : 'No events found'}
-                          </p>
-                          {!searchTerm && (
-                            <Link href="/events/create">
-                              <Button variant="link" className="mt-2">
-                                Create your first event
-                              </Button>
-                            </Link>
-                          )}
-                        </div>
-                      </TableCell>
+                      <TableHead>Event Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Venue</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredEvents.map((event) => (
-                      <TableRow key={event.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                        <TableCell>
-                          <div className="font-medium">{event.eventName}</div>
-                          {event.description && (
-                            <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                              {event.description}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center gap-1 w-fit">
-                            <Tag className="h-3 w-3" />
-                            {event.eventType || 'General'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4 text-gray-400" />
-                            {event.eventDate}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-4 w-4 text-gray-400" />
-                            {event.venue}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(event.status)}`}>
-                            {event.status || 'Active'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Link href={`/events/${event.id}`}>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <Link href={`/events/edit/${event.id}`}>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                              onClick={() => handleDelete(event.id, event.eventName)}
-                              disabled={deletingId === event.id}
-                            >
-                              {deletingId === event.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </Button>
+                  </TableHeader>
+                  <TableBody>
+                    {currentEvents.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12">
+                          <div className="flex flex-col items-center">
+                            <Calendar className="h-12 w-12 text-gray-300 mb-3" />
+                            <p className="text-gray-500">
+                              {searchTerm ? 'No events match your search' : 'No events found'}
+                            </p>
+                            {!searchTerm && (
+                              <Link href="/events/create">
+                                <Button variant="link" className="mt-2">
+                                  Create your first event
+                                </Button>
+                              </Link>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : (
+                      currentEvents.map((event) => (
+                        <TableRow key={event.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                          <TableCell>
+                            <div className="font-medium">{event.eventName}</div>
+                            {event.description && (
+                              <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                {event.description}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center gap-1 w-fit">
+                              <Tag className="h-3 w-3" />
+                              {event.eventType || 'General'}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-4 w-4 text-gray-400" />
+                              {event.eventDate}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="h-4 w-4 text-gray-400" />
+                              {event.venue}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(event.status)}`}>
+                              {event.status || 'Active'}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Link href={`/events/${event.id}`}>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Link href={`/events/edit/${event.id}`}>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                onClick={() => handleDelete(event.id, event.eventName)}
+                                disabled={deletingId === event.id}
+                              >
+                                {deletingId === event.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination Controls */}
+              {filteredEvents.length > 0 && (
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span>
+                      Showing {startIndex + 1} to {Math.min(endIndex, filteredEvents.length)} of {filteredEvents.length} events
+                    </span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="ml-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="gap-1"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+
+                    <div className="flex items-center gap-1">
+                      {(() => {
+                        const pages = [];
+                        const maxVisible = 5;
+                        let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                        
+                        if (endPage - startPage + 1 < maxVisible) {
+                          startPage = Math.max(1, endPage - maxVisible + 1);
+                        }
+                        
+                        if (startPage > 1) {
+                          pages.push(
+                            <Button
+                              key={1}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => goToPage(1)}
+                              className="min-w-[32px]"
+                            >
+                              1
+                            </Button>
+                          );
+                          if (startPage > 2) {
+                            pages.push(
+                              <span key="ellipsis1" className="px-1 text-gray-400">
+                                …
+                              </span>
+                            );
+                          }
+                        }
+                        
+                        for (let i = startPage; i <= endPage; i++) {
+                          pages.push(
+                            <Button
+                              key={i}
+                              variant={currentPage === i ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => goToPage(i)}
+                              className="min-w-[32px]"
+                            >
+                              {i}
+                            </Button>
+                          );
+                        }
+                        
+                        if (endPage < totalPages) {
+                          if (endPage < totalPages - 1) {
+                            pages.push(
+                              <span key="ellipsis2" className="px-1 text-gray-400">
+                                …
+                              </span>
+                            );
+                          }
+                          pages.push(
+                            <Button
+                              key={totalPages}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => goToPage(totalPages)}
+                              className="min-w-[32px]"
+                            >
+                              {totalPages}
+                            </Button>
+                          );
+                        }
+                        
+                        return pages;
+                      })()}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="gap-1"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

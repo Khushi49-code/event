@@ -10,70 +10,40 @@ import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import toast from 'react-hot-toast';
-import { Check, Crown, Loader2, ArrowLeft, Sparkles, Mail } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Check, Crown, Loader2, Mail, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Plan {
   id: string;
   name: string;
-  price: number | null; // null = custom / contact us
-  originalPrice?: number; // for showing a strikethrough discount
-  durationDays: number | null; // null = not applicable (custom)
+  price: number | null;
+  durationDays: number | null;
   durationLabel: string;
   description: string;
   features: string[];
-  bestValue?: boolean; // marketing tag, independent from selection state
+  bestValue?: boolean;
   isFree?: boolean;
   isCustom?: boolean;
+  pricePerEvent?: boolean;
 }
 
 const PLANS: Plan[] = [
   {
-    id: 'free-trial',
-    name: 'Free Trial',
-    price: 0,
-    durationDays: 30,
-    durationLabel: '1 Month',
-    description: 'Try EventFlux with no cost',
-    isFree: true,
-    features: [
-      'Up to 1 event',
-      'Up to 100 guests',
-      'Basic RSVP management',
-      'Email support',
-    ],
-  },
-  {
-    id: 'six-month',
-    name: '6 Months',
-    price: 11999,
-    durationDays: 182,
-    durationLabel: '6 Months',
-    description: 'Best for a season of events',
-    features: [
-      'Unlimited events',
-      'Up to 1000 guests per event',
-      'WhatsApp automation',
-      'Accommodation management',
-      'Priority support',
-    ],
-  },
-  {
-    id: 'twelve-month',
-    name: '12 Months',
-    price: 19999,
-    originalPrice: 23999,
+    id: 'pro',
+    name: 'Pro',
+    price: 100,
     durationDays: 365,
-    durationLabel: '12 Months',
-    description: 'Best value — 2 months free',
-    bestValue: true,
+    durationLabel: 'Per Event / Year',
+    description: 'Pay per event with full features',
+    pricePerEvent: true,
     features: [
-      'Everything in 6 Months',
-      'Unlimited guests',
-      'Custom branding',
-      'Dedicated account manager',
-      'Priority WhatsApp support',
+      'Full event management',
+      'Unlimited guests per event',
+      'WhatsApp automation',
+      'RSVP management',
+      'Accommodation management',
+      'Email support',
+      'All premium features',
     ],
   },
   {
@@ -90,13 +60,13 @@ const PLANS: Plan[] = [
       'API access',
       'Dedicated onboarding',
       'SLA-backed support',
+      'Priority WhatsApp support',
     ],
   },
 ];
 
 export default function BillingPage() {
   const { user } = useAuth();
-  const router = useRouter();
   const { planName, daysLeft, status: planStatus } = usePlanExpiry();
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
 
@@ -147,12 +117,10 @@ export default function BillingPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
- 
-
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Choose Your Plan</h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Start free, or pick a plan that fits how long you need EventFlux
+          Simple pricing — pay per event or get a custom plan
         </p>
 
         {planName && (
@@ -167,34 +135,35 @@ export default function BillingPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
         {PLANS.map((plan) => {
           const isCurrentPlan = planName === plan.name && planStatus !== 'expired' && planStatus !== 'none';
           const isProcessing = processingPlanId === plan.id;
 
-          // Decide which badge (if any) this card shows, above the card itself
           let badgeNode: React.ReactNode = null;
           if (isCurrentPlan) {
             badgeNode = (
-              <Badge variant="default" className="px-3 py-1 bg-blue-600 hover:bg-blue-600">
+              <Badge variant="default" className="px-3 py-1 bg-blue-600 hover:bg-blue-600 text-white">
                 Your Plan
               </Badge>
             );
-          } else if (plan.bestValue) {
-            badgeNode = <Badge variant="success" className="px-3 py-1">Best Value</Badge>;
-          } else if (plan.isFree) {
+          } else if (plan.isCustom) {
             badgeNode = (
-              <Badge variant="warning" className="px-3 py-1 flex items-center gap-1">
-                <Sparkles className="h-3 w-3" />
-                No Cost
+              <Badge variant="default" className="px-3 py-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 border-2 border-purple-500">
+                <Sparkles className="h-3 w-3 mr-1" />
+                Enterprise
+              </Badge>
+            );
+          } else if (plan.pricePerEvent) {
+            badgeNode = (
+              <Badge variant="success" className="px-3 py-1">
+                <Zap className="h-3 w-3 mr-1" />
+                Popular
               </Badge>
             );
           }
 
           return (
-            // Outer wrapper is NOT clipped (no overflow-hidden), so the badge
-            // sits fully outside/above the Card and never gets cut off,
-            // regardless of the Card component's own rounded-corner overflow styling.
             <div key={plan.id} className="relative pt-4">
               {badgeNode && (
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10">
@@ -203,12 +172,20 @@ export default function BillingPage() {
               )}
               <Card
                 className={cn(
-                  'flex flex-col h-full transition-all',
-                  isCurrentPlan && 'border-2 border-blue-500 shadow-lg'
+                  'flex flex-col h-full transition-all hover:shadow-lg',
+                  isCurrentPlan && 'border-2 border-blue-500 shadow-lg',
+                  plan.isCustom && 'border-2 border-purple-200 dark:border-purple-800'
                 )}
               >
                 <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    {plan.isCustom ? (
+                      <Sparkles className="h-5 w-5 text-purple-500" />
+                    ) : (
+                      <Zap className="h-5 w-5 text-blue-500" />
+                    )}
+                    {plan.name}
+                  </CardTitle>
                   <CardDescription>{plan.description}</CardDescription>
                 </CardHeader>
 
@@ -218,21 +195,17 @@ export default function BillingPage() {
                       <span className="text-2xl font-bold text-gray-900 dark:text-white">
                         Let's Talk
                       </span>
-                    ) : plan.isFree ? (
-                      <span className="text-3xl font-bold text-gray-900 dark:text-white">Free</span>
-                    ) : (
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-3xl font-bold text-gray-900 dark:text-white">
-                          ₹{plan.price!.toLocaleString('en-IN')}
+                    ) : plan.pricePerEvent ? (
+                      <div>
+                        <span className="text-4xl font-bold text-gray-900 dark:text-white">
+                          ${plan.price}
                         </span>
-                        {plan.originalPrice && (
-                          <span className="text-sm text-gray-400 line-through">
-                            ₹{plan.originalPrice.toLocaleString('en-IN')}
-                          </span>
-                        )}
+                        <span className="text-sm text-gray-500 ml-2">/ event</span>
+                        <p className="text-xs text-gray-400 mt-1">Billed annually</p>
                       </div>
+                    ) : (
+                      <span className="text-3xl font-bold text-gray-900 dark:text-white">Free</span>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">{plan.durationLabel}</p>
                   </div>
 
                   <ul className="space-y-3 mb-6 flex-1">
@@ -246,7 +219,7 @@ export default function BillingPage() {
 
                   <Button
                     className="w-full"
-                    variant={isCurrentPlan ? 'default' : 'outline'}
+                    variant={isCurrentPlan ? 'default' : plan.isCustom ? 'outline' : 'default'}
                     disabled={isProcessing}
                     onClick={() => handleSelectPlan(plan)}
                   >
@@ -262,12 +235,16 @@ export default function BillingPage() {
                       </>
                     ) : isCurrentPlan ? (
                       'Renew Plan'
-                    ) : plan.isFree ? (
-                      'Start Free Trial'
                     ) : (
                       'Select Plan'
                     )}
                   </Button>
+
+                  {plan.pricePerEvent && !isCurrentPlan && (
+                    <p className="text-xs text-center text-gray-400 mt-3">
+                      Pay only for events you create
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -275,9 +252,13 @@ export default function BillingPage() {
         })}
       </div>
 
-      <p className="text-center text-xs text-gray-500 mt-8">
-        This activates the plan directly. Connect a real payment gateway (Razorpay/Stripe) before going live.
-      </p>
+      <div className="mt-12 text-center">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            💡 All plans include: WhatsApp automation, RSVP management, Guest management
+          </span>
+        </div>
+      </div>     
     </div>
   );
 }

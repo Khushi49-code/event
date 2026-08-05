@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Sidebar from '@/components/layout/Sidebar';
 import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer'; // Import Footer
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -42,7 +43,6 @@ export default function DashboardLayout({
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Navbar />
         <main className="flex-1 overflow-y-auto p-6 min-w-0 [container-type:inline-size] relative">
-          
           {/* 🌟 GLOBAL SUPPORT BUTTON */}
           <div className="fixed bottom-8 right-8 z-50">
             <Link href="/support">
@@ -55,6 +55,7 @@ export default function DashboardLayout({
 
           {children}
         </main>
+        <Footer /> {/* Add Footer here - outside main but inside flex column */}
       </div>
     </div>
   );
