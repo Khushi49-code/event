@@ -254,23 +254,7 @@ export default function Sidebar() {
                 </div>
               )}
             </Link>
-            <Link
-              href="/help"
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group relative",
-                pathname === '/help'
-                  ? "bg-blue-600 text-white"
-                  : "hover:bg-gray-800 text-gray-300"
-              )}
-            >
-              <HelpCircle size={20} className="flex-shrink-0" />
-              {!collapsed && <span>Help</span>}
-              {collapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                  Help
-                </div>
-              )}
-            </Link>
+          
           </div>
         </nav>
 
