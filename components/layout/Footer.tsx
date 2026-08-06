@@ -12,7 +12,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
         {/* Left side - Company Name */}
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          © {currentYear} Event Manager. All rights reserved.
+          © {currentYear} Eventflux-Powered by dcodes Technologies.
         </p>
 
         {/* Right side - Links with Icons */}

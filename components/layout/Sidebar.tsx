@@ -34,8 +34,11 @@ import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import toast from 'react-hot-toast';
 import { Avatar } from '@/components/ui/Avatar';
 
+// NOTE: (dashboard) is a Next.js *route group* — the parentheses mean it
+// does NOT add a URL segment. app/(dashboard)/page.tsx resolves to "/",
+// not "/dashboard". So the Dashboard link must point to "/".
 const menuItems = [
-  { name: 'Dashboard', icon: Home, href: '/dashboard' },
+  { name: 'Dashboard', icon: Home, href: '/' },
   { name: 'Events', icon: Calendar, href: '/events' },
   { name: 'Invitations', icon: Mail, href: '/invitations' },
   { name: 'Guests', icon: Users, href: '/guests' },
@@ -90,6 +93,14 @@ export default function Sidebar() {
     if (isMobile) {
       setIsOpen(false);
     }
+  };
+
+  // Works out whether a nav item is "active" for the current route.
+  // Root ("/") needs an exact match only — otherwise every route would
+  // match it via startsWith("/").
+  const isItemActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(href + '/');
   };
 
   // Visual config for the compact plan indicator
@@ -162,7 +173,7 @@ export default function Sidebar() {
         {/* Logo Section */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           {!isCollapsed ? (
-            <Link href="/dashboard" className="inline-flex items-center gap-3" onClick={closeSidebar}>
+            <Link href="/" className="inline-flex items-center gap-3" onClick={closeSidebar}>
               <img
                 src="/Logo.png"
                 alt="EventFlux Logo"
@@ -178,7 +189,7 @@ export default function Sidebar() {
               </div>
             </Link>
           ) : (
-            <Link href="/dashboard" className="mx-auto" onClick={closeSidebar}>
+            <Link href="/" className="mx-auto" onClick={closeSidebar}>
               <img
                 src="/Logo.png"
                 alt="EventFlux Logo"
@@ -242,7 +253,7 @@ export default function Sidebar() {
         <nav className="flex-1 overflow-y-auto py-4 scrollbar-thin scrollbar-thumb-gray-700">
           <div className="px-2 space-y-1">
             {menuItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+              const isActive = isItemActive(item.href);
               return (
                 <Link
                   key={item.href}

@@ -160,11 +160,9 @@ export default function TermsPage() {
             </p>
             <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm">
-                <span className="font-semibold">Email:</span> legal@eventmanager.com
+                <span className="font-semibold">Email:</span> eventflux@eventmanager.com
               </p>
-              <p className="text-sm mt-1">
-                <span className="font-semibold">Address:</span> 123 Event Street, City, Country
-              </p>
+
             </div>
           </CardContent>
         </Card>

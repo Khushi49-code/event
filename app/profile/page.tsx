@@ -41,8 +41,10 @@ export default function ProfilePage() {
     }
   };
 
+  // (dashboard) is a Next.js route group — the parentheses don't add a URL
+  // segment, so app/(dashboard)/page.tsx resolves to "/", not "/dashboard".
   const handleBackToDashboard = () => {
-    router.push('/dashboard');
+    router.push('/');
   };
 
   // Visual config for plan status badge/card
