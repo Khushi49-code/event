@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { useRSVP, useEvents } from '@/hooks/useFirebase';
-import { Loader2, Filter, Download, Link as LinkIcon, Copy, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Loader2, Filter, Download, Link as LinkIcon, Copy, ChevronLeft, ChevronRight, Search, Mail, Phone, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Simple inline WhatsApp glyph (lucide-react has no brand icon for it)
@@ -192,6 +192,13 @@ export default function RSVPPage() {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
+  const statusClasses = (status?: string) =>
+    status === 'Confirmed'
+      ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+      : status === 'Pending'
+      ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+      : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -201,20 +208,26 @@ export default function RSVPPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
-        <h1 className="text-3xl font-bold">RSVP Management</h1>
-        <div className="flex flex-wrap gap-2">
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold">RSVP Management</h1>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button
             onClick={handleSendWhatsAppAll}
             disabled={!selectedEvent || filteredRSVPs.length === 0}
+            className="gap-1.5 px-2 sm:px-4 text-xs sm:text-sm"
           >
-            <WhatsAppIcon className="mr-2 h-4 w-4" />
-            Send to All via WhatsApp
+            <WhatsAppIcon className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Send to All via WhatsApp</span>
+            <span className="sm:hidden">Send All</span>
           </Button>
-          <Button variant="outline" onClick={exportData}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
+          <Button
+            variant="outline"
+            onClick={exportData}
+            className="gap-1.5 px-2 sm:px-4 text-xs sm:text-sm"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            <span>Export CSV</span>
           </Button>
         </div>
       </div>
@@ -227,7 +240,7 @@ export default function RSVPPage() {
       )}
 
       {selectedEvent && !invitationLoading && invitationId && (
-        <div className="flex items-center justify-between gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-300 min-w-0">
             <LinkIcon className="h-4 w-4 shrink-0" />
             <span className="truncate">
@@ -248,20 +261,20 @@ export default function RSVPPage() {
       <Card>
         <CardHeader>
           <div className="flex flex-col space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <CardTitle>
+            <div className="flex flex-col gap-3">
+              <CardTitle className="text-base sm:text-lg">
                 RSVP Responses
                 {!loading && (
-                  <span className="text-sm font-normal text-gray-500 ml-2">
+                  <span className="block sm:inline text-xs sm:text-sm font-normal text-gray-500 sm:ml-2">
                     ({filteredRSVPs.length} {filteredRSVPs.length === 1 ? 'response' : 'responses'})
                   </span>
                 )}
               </CardTitle>
-              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap w-full sm:w-auto">
                 <select
                   value={selectedEvent}
                   onChange={handleEventChange}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                  className="w-full sm:w-auto px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
                 >
                   <option value="">Select Event</option>
                   {events.map((event: any) => (
@@ -273,7 +286,7 @@ export default function RSVPPage() {
                 <select
                   value={filter}
                   onChange={handleFilterChange}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                  className="w-full sm:w-auto px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
                 >
                   <option value="All">All</option>
                   <option value="Confirmed">Confirmed</option>
@@ -283,14 +296,14 @@ export default function RSVPPage() {
               </div>
             </div>
             {selectedEvent && (
-              <div className="relative w-full sm:w-64">
+              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search RSVPs..."
                   value={searchTerm}
                   onChange={handleSearchChange}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                 />
               </div>
             )}
@@ -309,96 +322,159 @@ export default function RSVPPage() {
           )}
           {selectedEvent && (
             <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Total Guests</TableHead>
-                      <TableHead>Adults</TableHead>
-                      <TableHead>Children</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Invite Link</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentRSVPs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-gray-500">
-                          {searchTerm 
-                            ? 'No RSVPs match your search' 
-                            : filter !== 'All' 
-                            ? `No ${filter} RSVPs found` 
-                            : 'No RSVP responses found'}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      currentRSVPs.map((rsvp: any) => (
-                        <TableRow key={rsvp.id}>
-                          <TableCell className="font-medium">{rsvp.name || 'N/A'}</TableCell>
-                          <TableCell>{rsvp.email || 'N/A'}</TableCell>
-                          <TableCell>{rsvp.phone || 'N/A'}</TableCell>
-                          <TableCell>{rsvp.guests || 0}</TableCell>
-                          <TableCell>{rsvp.adults || 0}</TableCell>
-                          <TableCell>{rsvp.children || 0}</TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              rsvp.status === 'Confirmed'
-                                ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                                : rsvp.status === 'Pending'
-                                ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                                : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
-                            }`}>
+              {currentRSVPs.length === 0 ? (
+                <p className="text-center py-8 text-gray-500 text-sm">
+                  {searchTerm 
+                    ? 'No RSVPs match your search' 
+                    : filter !== 'All' 
+                    ? `No ${filter} RSVPs found` 
+                    : 'No RSVP responses found'}
+                </p>
+              ) : (
+                <>
+                  {/* Mobile: stacked cards */}
+                  <div className="space-y-3 md:hidden">
+                    {currentRSVPs.map((rsvp: any) => (
+                      <div
+                        key={rsvp.id}
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{rsvp.name || 'N/A'}</p>
+                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs ${statusClasses(rsvp.status)}`}>
                               {rsvp.status || 'Pending'}
                             </span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => handleCopyLink(rsvp)}
-                                disabled={!selectedEvent || !invitationId}
-                                title="Copy personal invitation link"
-                                className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => handleSendWhatsApp(rsvp)}
-                                disabled={!selectedEvent || !invitationId}
-                                title="Send invitation via WhatsApp"
-                                className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              >
-                                <WhatsAppIcon className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              value={rsvp.status || 'Pending'}
-                              onChange={(e) => handleStatusUpdate(rsvp.id, e.target.value)}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm bg-white dark:bg-gray-800"
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleCopyLink(rsvp)}
+                              disabled={!invitationId}
+                              title="Copy personal invitation link"
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
                             >
-                              <option value="Pending">Pending</option>
-                              <option value="Confirmed">Confirmed</option>
-                              <option value="Declined">Declined</option>
-                            </select>
-                          </TableCell>
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleSendWhatsApp(rsvp)}
+                              disabled={!invitationId}
+                              title="Send invitation via WhatsApp"
+                              className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <WhatsAppIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-2">
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            <span className="truncate">{rsvp.phone || 'N/A'}</span>
+                          </div>
+                          {rsvp.email && (
+                            <div className="flex items-center gap-2">
+                              <Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                              <span className="truncate">{rsvp.email}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <Users className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            <span>
+                              {rsvp.guests || 0} total &middot; {rsvp.adults || 0} adults &middot; {rsvp.children || 0} kids
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <select
+                            value={rsvp.status || 'Pending'}
+                            onChange={(e) => handleStatusUpdate(rsvp.id, e.target.value)}
+                            className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Declined">Declined</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop / tablet: table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Total Guests</TableHead>
+                          <TableHead>Adults</TableHead>
+                          <TableHead>Children</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Invite Link</TableHead>
+                          <TableHead>Action</TableHead>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {currentRSVPs.map((rsvp: any) => (
+                          <TableRow key={rsvp.id}>
+                            <TableCell className="font-medium">{rsvp.name || 'N/A'}</TableCell>
+                            <TableCell>{rsvp.email || 'N/A'}</TableCell>
+                            <TableCell>{rsvp.phone || 'N/A'}</TableCell>
+                            <TableCell>{rsvp.guests || 0}</TableCell>
+                            <TableCell>{rsvp.adults || 0}</TableCell>
+                            <TableCell>{rsvp.children || 0}</TableCell>
+                            <TableCell>
+                              <span className={`px-2 py-1 rounded-full text-xs ${statusClasses(rsvp.status)}`}>
+                                {rsvp.status || 'Pending'}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleCopyLink(rsvp)}
+                                  disabled={!selectedEvent || !invitationId}
+                                  title="Copy personal invitation link"
+                                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleSendWhatsApp(rsvp)}
+                                  disabled={!selectedEvent || !invitationId}
+                                  title="Send invitation via WhatsApp"
+                                  className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  <WhatsAppIcon className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <select
+                                value={rsvp.status || 'Pending'}
+                                onChange={(e) => handleStatusUpdate(rsvp.id, e.target.value)}
+                                className="px-2 py-1 border border-gray-300 rounded text-sm bg-white dark:bg-gray-800"
+                              >
+                                <option value="Pending">Pending</option>
+                                <option value="Confirmed">Confirmed</option>
+                                <option value="Declined">Declined</option>
+                              </select>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
 
               {/* Pagination Controls */}
               {filteredRSVPs.length > 0 && (
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="flex flex-col gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-gray-500">
                     <span>
-                      Showing {startIndex + 1} to {Math.min(endIndex, filteredRSVPs.length)} of {filteredRSVPs.length} RSVPs
+                      {startIndex + 1}-{Math.min(endIndex, filteredRSVPs.length)} of {filteredRSVPs.length}
                     </span>
                     <select
                       value={itemsPerPage}
@@ -406,31 +482,31 @@ export default function RSVPPage() {
                         setItemsPerPage(Number(e.target.value));
                         setCurrentPage(1);
                       }}
-                      className="ml-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value={5}>5</option>
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
+                      <option value={5}>5 / page</option>
+                      <option value={10}>10 / page</option>
+                      <option value={25}>25 / page</option>
+                      <option value={50}>50 / page</option>
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => goToPage(currentPage - 1)}
                       disabled={currentPage === 1}
-                      className="gap-1"
+                      className="gap-1 px-2 sm:px-3"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="hidden sm:inline">Previous</span>
                     </Button>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 overflow-x-auto">
                       {(() => {
                         const pages = [];
-                        const maxVisible = 5;
+                        const maxVisible = 3;
                         let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
                         let endPage = Math.min(totalPages, startPage + maxVisible - 1);
                         
@@ -445,7 +521,7 @@ export default function RSVPPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => goToPage(1)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               1
                             </Button>
@@ -466,7 +542,7 @@ export default function RSVPPage() {
                               variant={currentPage === i ? "default" : "outline"}
                               size="sm"
                               onClick={() => goToPage(i)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               {i}
                             </Button>
@@ -487,7 +563,7 @@ export default function RSVPPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => goToPage(totalPages)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               {totalPages}
                             </Button>
@@ -503,9 +579,9 @@ export default function RSVPPage() {
                       size="sm"
                       onClick={() => goToPage(currentPage + 1)}
                       disabled={currentPage === totalPages}
-                      className="gap-1"
+                      className="gap-1 px-2 sm:px-3"
                     >
-                      Next
+                      <span className="hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>

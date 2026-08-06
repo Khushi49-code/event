@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { useAccommodations, useEvents, useGuests } from '@/hooks/useFirebase';
-import { Loader2, Hotel, Plus, X, Save, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Loader2, Hotel, Plus, X, Save, ChevronLeft, ChevronRight, Search, Calendar, BedDouble } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Simple inline WhatsApp glyph (lucide-react has no brand icon for it)
@@ -234,10 +234,14 @@ export default function AccommodationPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold">Accommodation Management</h1>
-        <Button onClick={() => setShowAddForm(true)} disabled={!selectedEvent}>
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold">Accommodation Management</h1>
+        <Button
+          onClick={() => setShowAddForm(true)}
+          disabled={!selectedEvent}
+          className="w-full sm:w-auto"
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add Booking
         </Button>
@@ -246,11 +250,11 @@ export default function AccommodationPage() {
       <Card>
         <CardHeader>
           <div className="flex flex-col space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <CardTitle>
+            <div className="flex flex-col gap-3">
+              <CardTitle className="text-base sm:text-lg">
                 Accommodation Bookings
                 {!loading && selectedEvent && (
-                  <span className="text-sm font-normal text-gray-500 ml-2">
+                  <span className="block sm:inline text-xs sm:text-sm font-normal text-gray-500 sm:ml-2">
                     ({filteredAccommodations.length} {filteredAccommodations.length === 1 ? 'booking' : 'bookings'})
                   </span>
                 )}
@@ -258,7 +262,7 @@ export default function AccommodationPage() {
               <select
                 value={selectedEvent}
                 onChange={handleEventChange}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 w-full sm:w-auto"
+                className="px-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 w-full sm:w-auto text-sm"
               >
                 <option value="">Select Event</option>
                 {events.map((event: any) => (
@@ -269,14 +273,14 @@ export default function AccommodationPage() {
               </select>
             </div>
             {selectedEvent && (
-              <div className="relative w-full sm:w-64">
+              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search bookings..."
                   value={searchTerm}
                   onChange={handleSearchChange}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                 />
               </div>
             )}
@@ -297,21 +301,21 @@ export default function AccommodationPage() {
           )}
 
           {showAddForm && selectedEvent && (
-            <div className="mb-6 p-4 border rounded-lg bg-gray-50 dark:bg-gray-800/50">
+            <div className="mb-6 p-3 sm:p-4 border rounded-lg bg-gray-50 dark:bg-gray-800/50">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Add New Booking</h3>
+                <h3 className="font-semibold text-sm sm:text-base">Add New Booking</h3>
                 <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
                   <Label htmlFor="guestPick">Confirmed Guest *</Label>
                   <select
                     id="guestPick"
                     value={selectedGuestId}
                     onChange={(e) => handleGuestPick(e.target.value)}
-                    className="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800"
+                    className="w-full px-3 py-2.5 sm:py-2 border rounded bg-white dark:bg-gray-800 text-sm"
                   >
                     <option value="">Choose from confirmed RSVPs...</option>
                     {confirmedGuests.map((g: any) => (
@@ -366,7 +370,7 @@ export default function AccommodationPage() {
                     id="roomType"
                     value={formData.roomType}
                     onChange={(e) => setFormData({ ...formData, roomType: e.target.value })}
-                    className="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800"
+                    className="w-full px-3 py-2.5 sm:py-2 border rounded bg-white dark:bg-gray-800 text-sm"
                   >
                     <option value="Single">Single</option>
                     <option value="Double">Double</option>
@@ -394,7 +398,7 @@ export default function AccommodationPage() {
                     required
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div className="sm:col-span-2">
                   <Label htmlFor="roomNumber">Room Number (if known)</Label>
                   <Input
                     id="roomNumber"
@@ -403,8 +407,8 @@ export default function AccommodationPage() {
                     onChange={(e) => setFormData({ ...formData, roomNumber: e.target.value })}
                   />
                 </div>
-                <div className="col-span-1 md:col-span-2 flex gap-2">
-                  <Button type="submit" disabled={saving}>
+                <div className="col-span-1 sm:col-span-2 flex flex-col sm:flex-row gap-2">
+                  <Button type="submit" disabled={saving} className="w-full sm:w-auto">
                     {saving ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -414,7 +418,12 @@ export default function AccommodationPage() {
                       'Save Booking'
                     )}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => { setShowAddForm(false); resetForm(); }}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setShowAddForm(false); resetForm(); }}
+                    className="w-full sm:w-auto"
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -428,124 +437,223 @@ export default function AccommodationPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Guest Name</TableHead>
-                      <TableHead>Hotel</TableHead>
-                      <TableHead>Room Type</TableHead>
-                      <TableHead>Room Number</TableHead>
-                      <TableHead>Check-in</TableHead>
-                      <TableHead>Check-out</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Assign Room</TableHead>
-                      <TableHead>Notify</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentAccommodations.length === 0 ? (
-                      <TableRow>
-                        <td colSpan={9} className="text-center py-8 text-gray-500">
-                          {!selectedEvent
-                            ? 'Select an event to see bookings.'
-                            : searchTerm
-                            ? 'No bookings match your search'
-                            : 'No accommodation bookings found for this event yet.'}
-                        </td>
-                      </TableRow>
-                    ) : (
-                      currentAccommodations.map((acc: any) => (
-                        <TableRow key={acc.id}>
-                          <TableCell className="font-medium">{acc.guestName}</TableCell>
-                          <TableCell>{acc.hotelName || 'N/A'}</TableCell>
-                          <TableCell>{acc.roomType}</TableCell>
-                          <TableCell>{acc.roomNumber || 'Not assigned'}</TableCell>
-                          <TableCell>{acc.checkIn}</TableCell>
-                          <TableCell>{acc.checkOut}</TableCell>
-                          <TableCell>
-                            <select
-                              value={acc.status || 'Confirmed'}
-                              onChange={(e) => handleStatusChange(acc.id, e.target.value)}
-                              className="px-2 py-1 border rounded text-xs bg-white dark:bg-gray-800"
+              {currentAccommodations.length === 0 ? (
+                <p className="text-center py-8 text-gray-500 text-sm">
+                  {!selectedEvent
+                    ? 'Select an event to see bookings.'
+                    : searchTerm
+                    ? 'No bookings match your search'
+                    : 'No accommodation bookings found for this event yet.'}
+                </p>
+              ) : (
+                <>
+                  {/* Mobile: stacked cards */}
+                  <div className="space-y-3 md:hidden">
+                    {currentAccommodations.map((acc: any) => (
+                      <div
+                        key={acc.id}
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{acc.guestName}</p>
+                            <p className="text-sm text-gray-500 truncate">{acc.hotelName || 'No hotel set'}</p>
+                          </div>
+                          {acc.guestPhone ? (
+                            <button
+                              onClick={() => handleSendWhatsApp(acc)}
+                              title="Send hotel details via WhatsApp"
+                              className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600 shrink-0"
                             >
-                              <option value="Confirmed">Confirmed</option>
-                              <option value="Pending">Pending</option>
-                              <option value="Cancelled">Cancelled</option>
-                              <option value="Checked-in">Checked-in</option>
-                              <option value="Checked-out">Checked-out</option>
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                placeholder="Room #"
-                                value={roomInputs[acc.id] ?? ''}
-                                onChange={(e) => setRoomInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleRoomAssign(acc.id);
-                                }}
-                                className="w-20 px-2 py-1 border rounded text-sm"
-                              />
-                              <button
-                                onClick={() => handleRoomAssign(acc.id)}
-                                title="Save room number"
-                                className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
-                              >
+                              <WhatsAppIcon className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-2">
+                            <BedDouble className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            <span>{acc.roomType} &middot; {acc.roomNumber || 'Room not assigned'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            <span>{acc.checkIn || '—'} → {acc.checkOut || '—'}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <select
+                            value={acc.status || 'Confirmed'}
+                            onChange={(e) => handleStatusChange(acc.id, e.target.value)}
+                            className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800"
+                          >
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="Checked-in">Checked-in</option>
+                            <option value="Checked-out">Checked-out</option>
+                          </select>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="Room #"
+                            value={roomInputs[acc.id] ?? ''}
+                            onChange={(e) => setRoomInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRoomAssign(acc.id);
+                            }}
+                            className="flex-1 min-w-0 px-2 py-2 border rounded text-sm"
+                          />
+                          <button
+                            onClick={() => handleRoomAssign(acc.id)}
+                            title="Save room number"
+                            className="p-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600 shrink-0"
+                          >
+                            <Save className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {!acc.guestPhone && (
+                          <div className="mt-2 flex items-center gap-1">
+                            <input
+                              type="text"
+                              placeholder="Add phone for WhatsApp"
+                              value={phoneFixInputs[acc.id] ?? ''}
+                              onChange={(e) => setPhoneFixInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleFixPhone(acc.id);
+                              }}
+                              className="flex-1 min-w-0 px-2 py-2 border rounded text-sm"
+                            />
+                            <button
+                              onClick={() => handleFixPhone(acc.id)}
+                              title="Save phone number"
+                              className="p-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600 shrink-0"
+                              disabled={fixingPhone === acc.id}
+                            >
+                              {fixingPhone === acc.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
                                 <Save className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {acc.guestPhone ? (
-                              <button
-                                onClick={() => handleSendWhatsApp(acc)}
-                                title="Send hotel details via WhatsApp"
-                                className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600"
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop / tablet: table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Guest Name</TableHead>
+                          <TableHead>Hotel</TableHead>
+                          <TableHead>Room Type</TableHead>
+                          <TableHead>Room Number</TableHead>
+                          <TableHead>Check-in</TableHead>
+                          <TableHead>Check-out</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Assign Room</TableHead>
+                          <TableHead>Notify</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {currentAccommodations.map((acc: any) => (
+                          <TableRow key={acc.id}>
+                            <TableCell className="font-medium">{acc.guestName}</TableCell>
+                            <TableCell>{acc.hotelName || 'N/A'}</TableCell>
+                            <TableCell>{acc.roomType}</TableCell>
+                            <TableCell>{acc.roomNumber || 'Not assigned'}</TableCell>
+                            <TableCell>{acc.checkIn}</TableCell>
+                            <TableCell>{acc.checkOut}</TableCell>
+                            <TableCell>
+                              <select
+                                value={acc.status || 'Confirmed'}
+                                onChange={(e) => handleStatusChange(acc.id, e.target.value)}
+                                className="px-2 py-1 border rounded text-xs bg-white dark:bg-gray-800"
                               >
-                                <WhatsAppIcon className="h-4 w-4" />
-                              </button>
-                            ) : (
+                                <option value="Confirmed">Confirmed</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Cancelled">Cancelled</option>
+                                <option value="Checked-in">Checked-in</option>
+                                <option value="Checked-out">Checked-out</option>
+                              </select>
+                            </TableCell>
+                            <TableCell>
                               <div className="flex items-center gap-1">
                                 <input
                                   type="text"
-                                  placeholder="Add phone"
-                                  value={phoneFixInputs[acc.id] ?? ''}
-                                  onChange={(e) => setPhoneFixInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                                  placeholder="Room #"
+                                  value={roomInputs[acc.id] ?? ''}
+                                  onChange={(e) => setRoomInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
                                   onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleFixPhone(acc.id);
+                                    if (e.key === 'Enter') handleRoomAssign(acc.id);
                                   }}
-                                  className="w-24 px-2 py-1 border rounded text-xs"
+                                  className="w-20 px-2 py-1 border rounded text-sm"
                                 />
                                 <button
-                                  onClick={() => handleFixPhone(acc.id)}
-                                  title="Save phone number"
+                                  onClick={() => handleRoomAssign(acc.id)}
+                                  title="Save room number"
                                   className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
-                                  disabled={fixingPhone === acc.id}
                                 >
-                                  {fixingPhone === acc.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Save className="h-4 w-4" />
-                                  )}
+                                  <Save className="h-4 w-4" />
                                 </button>
                               </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                            </TableCell>
+                            <TableCell>
+                              {acc.guestPhone ? (
+                                <button
+                                  onClick={() => handleSendWhatsApp(acc)}
+                                  title="Send hotel details via WhatsApp"
+                                  className="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900 text-green-600"
+                                >
+                                  <WhatsAppIcon className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Add phone"
+                                    value={phoneFixInputs[acc.id] ?? ''}
+                                    onChange={(e) => setPhoneFixInputs((prev) => ({ ...prev, [acc.id]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleFixPhone(acc.id);
+                                    }}
+                                    className="w-24 px-2 py-1 border rounded text-xs"
+                                  />
+                                  <button
+                                    onClick={() => handleFixPhone(acc.id)}
+                                    title="Save phone number"
+                                    className="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-600"
+                                    disabled={fixingPhone === acc.id}
+                                  >
+                                    {fixingPhone === acc.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Save className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
 
               {/* Pagination Controls */}
               {filteredAccommodations.length > 0 && selectedEvent && (
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="flex flex-col gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-gray-500">
                     <span>
-                      Showing {startIndex + 1} to {Math.min(endIndex, filteredAccommodations.length)} of {filteredAccommodations.length} bookings
+                      {startIndex + 1}-{Math.min(endIndex, filteredAccommodations.length)} of {filteredAccommodations.length}
                     </span>
                     <select
                       value={itemsPerPage}
@@ -553,31 +661,31 @@ export default function AccommodationPage() {
                         setItemsPerPage(Number(e.target.value));
                         setCurrentPage(1);
                       }}
-                      className="ml-2 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value={5}>5</option>
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
+                      <option value={5}>5 / page</option>
+                      <option value={10}>10 / page</option>
+                      <option value={25}>25 / page</option>
+                      <option value={50}>50 / page</option>
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => goToPage(currentPage - 1)}
                       disabled={currentPage === 1}
-                      className="gap-1"
+                      className="gap-1 px-2 sm:px-3"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="hidden sm:inline">Previous</span>
                     </Button>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 overflow-x-auto">
                       {(() => {
                         const pages = [];
-                        const maxVisible = 5;
+                        const maxVisible = 3;
                         let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
                         let endPage = Math.min(totalPages, startPage + maxVisible - 1);
                         
@@ -592,7 +700,7 @@ export default function AccommodationPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => goToPage(1)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               1
                             </Button>
@@ -613,7 +721,7 @@ export default function AccommodationPage() {
                               variant={currentPage === i ? "default" : "outline"}
                               size="sm"
                               onClick={() => goToPage(i)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               {i}
                             </Button>
@@ -634,7 +742,7 @@ export default function AccommodationPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => goToPage(totalPages)}
-                              className="min-w-[32px]"
+                              className="min-w-[32px] px-2"
                             >
                               {totalPages}
                             </Button>
@@ -650,9 +758,9 @@ export default function AccommodationPage() {
                       size="sm"
                       onClick={() => goToPage(currentPage + 1)}
                       disabled={currentPage === totalPages}
-                      className="gap-1"
+                      className="gap-1 px-2 sm:px-3"
                     >
-                      Next
+                      <span className="hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
