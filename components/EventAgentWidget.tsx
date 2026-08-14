@@ -141,7 +141,16 @@ export default function EventAgentWidget() {
   // Guests view their invitation cards under /invitations/view/... — this
   // is a public-facing page, not the admin dashboard, so the AI event
   // creation widget has no business appearing there. Hide it entirely.
-  if (pathname?.startsWith('/invitations/view')) {
+  //
+  // Same for the auth pages (login/register/forgot-password) — no signed-in
+  // user yet, so there's nothing for the widget to do there either.
+  const hiddenPrefixes = [
+    '/invitations/view',
+    '/auth/login',
+    '/auth/register',
+    '/auth/forgot-password',
+  ];
+  if (pathname && hiddenPrefixes.some((prefix) => pathname.startsWith(prefix))) {
     return null;
   }
 
