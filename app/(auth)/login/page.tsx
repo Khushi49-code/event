@@ -74,17 +74,10 @@ export default function LoginPage() {
       const userDocRef = doc(db, 'users', uid);
       const userDocSnap = await getDoc(userDocRef);
 
-      // DEBUG: log exactly what Firestore returned for this user so we can
-      // see the real field names/values. Check your browser console after
-      // logging in with the inactive test account.
-      console.log('User doc exists:', userDocSnap.exists());
-      console.log('User doc data:', userDocSnap.data());
-
       const userData = userDocSnap.exists() ? userDocSnap.data() : null;
 
       // 1. Admin deactivation check
       const deactivated = isUserDeactivated(userData);
-      console.log('Computed deactivated status:', deactivated);
 
       if (deactivated) {
         await signOut(auth);
@@ -117,6 +110,7 @@ export default function LoginPage() {
       }
 
       toast.success('Login successful!');
+      // app/(dashboard)/page.tsx is a route group, so it resolves to '/'.
       window.location.href = '/';
 
     } catch (error: any) {

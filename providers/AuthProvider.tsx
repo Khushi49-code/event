@@ -1,34 +1,22 @@
 // providers/AuthProvider.tsx
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from 'react';
+import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
 import { onIdTokenChanged, User } from 'firebase/auth';
 import { auth } from '@/lib/config';
+import { AuthProvider as MainAuthProvider, useAuth as useMainAuth } from '@/contexts/AuthContext';
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-}
-
-const AuthContext = createContext<AuthContextType>({
+// Token Context
+const TokenContext = createContext<{ user: User | null; loading: boolean }>({
   user: null,
   loading: true,
 });
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+function TokenProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // onIdTokenChanged fires on sign-in, sign-out, AND whenever Firebase
-    // auto-refreshes the token (roughly every hour) — so this keeps the
-    // 'firebaseAuthToken' cookie (read by middleware.ts) always in sync.
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
@@ -45,12 +33,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <TokenContext.Provider value={{ user, loading }}>
       {children}
-    </AuthContext.Provider>
+    </TokenContext.Provider>
   );
 }
 
+// Main AuthProvider - બંને providers ને combine કરો
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return (
+    <MainAuthProvider>
+      <TokenProvider>
+        {children}
+      </TokenProvider>
+    </MainAuthProvider>
+  );
+}
+
+// useAuth - main auth context માંથી
 export function useAuth() {
-  return useContext(AuthContext);
+  return useMainAuth();
 }

@@ -44,14 +44,14 @@ export default function GuestsPage() {
     name: '',
     email: '',
     phone: '',
-    guests: 1,
-    adults: 1,
-    children: 0,
+    guests: '',
+    adults: '',
+    children: '',
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
-    setForm({ name: '', email: '', phone: '', guests: 1, adults: 1, children: 0 });
+    setForm({ name: '', email: '', phone: '', guests: '', adults: '', children: '' });
   };
 
   const handleAddGuest = async () => {
@@ -75,9 +75,9 @@ export default function GuestsPage() {
         name: form.name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim(),
-        guests: Number(form.guests) || 1,
-        adults: Number(form.adults) || 1,
-        children: Number(form.children) || 0,
+        guests: form.guests === '' ? 0 : Number(form.guests),
+        adults: form.adults === '' ? 0 : Number(form.adults),
+        children: form.children === '' ? 0 : Number(form.children),
         status: 'Pending',
       });
       toast.success('Guest added successfully!');
@@ -197,21 +197,22 @@ export default function GuestsPage() {
         const phone = String(row[phoneKey] || '').trim();
         const email = emailKey ? String(row[emailKey] || '').trim() : '';
         
-        const guestsValue = guestsKey ? row[guestsKey] : 1;
-        const adultsValue = adultsKey ? row[adultsKey] : 1;
-        const childrenValue = childrenKey ? row[childrenKey] : 0;
+        let guestsValue = guestsKey ? row[guestsKey] : '';
+        let adultsValue = adultsKey ? row[adultsKey] : '';
+        let childrenValue = childrenKey ? row[childrenKey] : '';
         
-        const guests = parseInt(String(guestsValue || '1')) || 1;
-        const adults = parseInt(String(adultsValue || '1')) || 1;
-        const children = parseInt(String(childrenValue || '0')) || 0;
+        // If values are empty or invalid, set to 0
+        const guests = guestsValue === '' || isNaN(Number(guestsValue)) ? 0 : Number(guestsValue);
+        const adults = adultsValue === '' || isNaN(Number(adultsValue)) ? 0 : Number(adultsValue);
+        const children = childrenValue === '' || isNaN(Number(childrenValue)) ? 0 : Number(childrenValue);
 
         return {
           name,
           phone,
           email,
-          guests: Math.max(1, guests),
-          adults: Math.max(0, adults),
-          children: Math.max(0, children),
+          guests: guests,
+          adults: adults,
+          children: children,
         };
       });
 
@@ -257,9 +258,9 @@ export default function GuestsPage() {
             name: guest.name,
             email: guest.email || '',
             phone: guest.phone,
-            guests: guest.guests,
-            adults: guest.adults,
-            children: guest.children,
+            guests: guest.guests || 0,
+            adults: guest.adults || 0,
+            children: guest.children || 0,
             status: 'Pending',
           });
           successCount++;
@@ -552,9 +553,10 @@ export default function GuestsPage() {
                   <Input
                     id="guests"
                     type="number"
-                    min={1}
+                    min={0}
                     value={form.guests}
-                    onChange={(e) => setForm({ ...form, guests: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, guests: e.target.value })}
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -564,7 +566,8 @@ export default function GuestsPage() {
                     type="number"
                     min={0}
                     value={form.adults}
-                    onChange={(e) => setForm({ ...form, adults: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, adults: e.target.value })}
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -574,7 +577,8 @@ export default function GuestsPage() {
                     type="number"
                     min={0}
                     value={form.children}
-                    onChange={(e) => setForm({ ...form, children: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, children: e.target.value })}
+                    placeholder="0"
                   />
                 </div>
               </div>

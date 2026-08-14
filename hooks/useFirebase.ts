@@ -18,13 +18,47 @@ import {
   Timestamp,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db, storage } from '@/lib/config';
+import { db, storage, auth } from '@/lib/config';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   ref,
   uploadBytesResumable,
   getDownloadURL,
 } from 'firebase/storage';
 import toast from 'react-hot-toast';
+
+// ---------- Shared auth-ready gate ----------
+// Firebase Auth restores a persisted session asynchronously. On a page
+// refresh, onAuthStateChanged can fire with a valid `user` object before
+// that user's ID token is actually synced with the Firestore SDK's token
+// provider. Any Firestore query that fires before that sync completes can
+// silently come back permission-denied (or just empty), which shows up as
+// "data works right after login but disappears after refresh."
+//
+// Every hook below that queries Firestore with `where('...', '==', uid-ish
+// value)` waits on this gate (via its own onAuthStateChanged + forced
+// getIdToken(true)) before firing its query.
+function useAuthReady() {
+  const [uid, setUid] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          await user.getIdToken(true);
+        } catch (tokenError) {
+          console.error('useAuthReady: error refreshing ID token:', tokenError);
+        }
+      }
+      setUid(user?.uid || null);
+      setAuthChecked(true);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  return { uid, authChecked };
+}
 
 // ---------- useEvents ----------
 export interface EventDoc {
@@ -41,18 +75,48 @@ export interface EventDoc {
   imageUrl?: string;
   description?: string;
   status?: string;
+  createdBy?: string;
   createdAt?: any;
   updatedAt?: any;
   [key: string]: any;
+}
+
+// Sorts by eventDate ascending, client-side. Doing this here (instead of an
+// orderBy() in the query) means the events query only filters on one field
+// (createdBy), so it never needs a Firestore composite index — a query that
+// combines where(createdBy) + orderBy(eventDate) does need one, and if that
+// index is ever missing or still building, onSnapshot fails silently and
+// the list can stay empty until a full reload. Sorting here sidesteps that
+// whole class of intermittent "no data until I relogin" bugs.
+function sortByEventDate(list: EventDoc[]): EventDoc[] {
+  return [...list].sort((a, b) => {
+    const aTime = a.eventDate ? new Date(a.eventDate).getTime() : 0;
+    const bTime = b.eventDate ? new Date(b.eventDate).getTime() : 0;
+    return aTime - bTime;
+  });
 }
 
 export function useEvents() {
   const [events, setEvents] = useState<EventDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { uid, authChecked } = useAuthReady();
 
   useEffect(() => {
-    const q = query(collection(db, 'events'), orderBy('eventDate', 'asc'));
+    if (!authChecked) return;
+
+    // Not logged in -> no events
+    if (!uid) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // Single-field filter only — see sortByEventDate() above for why.
+    const q = query(collection(db, 'events'), where('createdBy', '==', uid));
 
     const unsubscribe = onSnapshot(
       q,
@@ -61,24 +125,43 @@ export function useEvents() {
           id: doc.id,
           ...doc.data(),
         })) as EventDoc[];
-        setEvents(data);
+        setEvents(sortByEventDate(data));
         setLoading(false);
       },
-      (err) => {
-        console.error('useEvents error:', err);
+      async (err) => {
+        console.error('useEvents onSnapshot ERROR:', err.code, err.message);
         setError(err.message);
-        setLoading(false);
+        // Realtime listener failed (e.g. transient permission/network
+        // hiccup) — fall back to a single one-shot fetch instead of just
+        // leaving the list empty until the user reloads/relogs in.
+        try {
+          const snap = await getDocs(q);
+          const data = snap.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as EventDoc[];
+          setEvents(sortByEventDate(data));
+        } catch (fallbackErr: any) {
+          console.error('useEvents fallback fetch also failed:', fallbackErr);
+          toast.error('Could not load your events. Please refresh the page.');
+        } finally {
+          setLoading(false);
+        }
       }
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [uid, authChecked]);
 
   const createEvent = useCallback(async (eventData: Omit<EventDoc, 'id'>) => {
     try {
+      if (!auth.currentUser) {
+        throw new Error('You must be logged in to create an event');
+      }
       const eventsRef = collection(db, 'events');
       const dataToSave = {
         ...eventData,
+        createdBy: auth.currentUser.uid,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
         status: eventData.status || 'active'
@@ -136,16 +219,22 @@ export function useEvents() {
   }, []);
 
   const refreshEvents = useCallback(async () => {
+    if (!auth.currentUser) {
+      setEvents([]);
+      return [];
+    }
     setLoading(true);
     try {
-      const q = query(collection(db, 'events'), orderBy('eventDate', 'asc'));
+      // Single-field filter only — see sortByEventDate() above.
+      const q = query(collection(db, 'events'), where('createdBy', '==', auth.currentUser.uid));
       const querySnapshot = await getDocs(q);
       const data = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as EventDoc[];
-      setEvents(data);
-      return data;
+      const sorted = sortByEventDate(data);
+      setEvents(sorted);
+      return sorted;
     } catch (error: any) {
       console.error('Error refreshing events:', error);
       throw new Error(error.message || 'Failed to refresh events');
@@ -166,7 +255,7 @@ export function useEvents() {
   };
 }
 
-// ---------- FIXED useFileUpload ----------
+// ---------- useFileUpload ----------
 export function useFileUpload() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -189,7 +278,6 @@ export function useFileUpload() {
           (snapshot) => {
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
             setProgress(progress);
-            console.log(`Upload progress: ${progress.toFixed(2)}%`);
           },
           (err) => {
             console.error('Upload error:', err);
@@ -200,7 +288,6 @@ export function useFileUpload() {
           async () => {
             try {
               const url = await getDownloadURL(uploadTask.snapshot.ref);
-              console.log('Upload completed, URL:', url);
               setDownloadURL(url);
               setProgress(100);
               setUploading(false);
@@ -229,13 +316,13 @@ export function useFileUpload() {
     setDownloadURL(null);
   }, []);
 
-  return { 
-    uploadFile, 
-    uploading, 
-    progress, 
+  return {
+    uploadFile,
+    uploading,
+    progress,
     error,
     downloadURL,
-    resetUpload 
+    resetUpload
   };
 }
 
@@ -442,7 +529,7 @@ export function useEventsOverview(events: EventDoc[]) {
   return { overview, loading };
 }
 
-// ---------- FIXED useRecentActivity ----------
+// ---------- useRecentActivity ----------
 export interface ActivityItem {
   id: string;
   user: string;
@@ -507,7 +594,7 @@ export function useRecentActivity(eventId: string, max: number = 5) {
               }
               return new Date(0);
             };
-            
+
             const dateA = getDate(a);
             const dateB = getDate(b);
             return dateB.getTime() - dateA.getTime();
@@ -519,7 +606,7 @@ export function useRecentActivity(eventId: string, max: number = 5) {
             const data = doc;
             const status = data.rsvpStatus || 'pending';
             const createdAt: Timestamp | undefined = data.createdAt;
-            
+
             let time = '';
             if (createdAt?.toDate) {
               time = timeAgo(createdAt.toDate());
@@ -588,8 +675,14 @@ export function useRSVP(eventId: string) {
   const [rsvps, setRsvps] = useState<RSVPDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Same fix as useEvents: wait for a fresh ID token before firing the
+  // Firestore query, so a page refresh doesn't race a stale/unsynced
+  // token and silently come back empty/permission-denied.
+  const { authChecked } = useAuthReady();
 
   useEffect(() => {
+    if (!authChecked) return;
+
     if (!eventId) {
       setRsvps([]);
       setLoading(false);
@@ -597,6 +690,7 @@ export function useRSVP(eventId: string) {
     }
 
     setLoading(true);
+    setError(null);
     const q = query(collection(db, 'guests'), where('eventId', '==', eventId));
 
     const unsubscribe = onSnapshot(
@@ -609,15 +703,30 @@ export function useRSVP(eventId: string) {
         setRsvps(data);
         setLoading(false);
       },
-      (err) => {
-        console.error('useRSVP error:', err);
+      async (err) => {
+        console.error('useRSVP onSnapshot ERROR:', err.code, err.message);
         setError(err.message);
-        setLoading(false);
+        // Fallback one-shot fetch, same pattern as useEvents, so a
+        // transient listener failure doesn't leave the table blank
+        // until the user manually reloads.
+        try {
+          const snap = await getDocs(q);
+          const data = snap.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as RSVPDoc[];
+          setRsvps(data);
+        } catch (fallbackErr: any) {
+          console.error('useRSVP fallback fetch also failed:', fallbackErr);
+          toast.error('Could not load RSVPs. Please refresh the page.');
+        } finally {
+          setLoading(false);
+        }
       }
     );
 
     return () => unsubscribe();
-  }, [eventId]);
+  }, [eventId, authChecked]);
 
   const updateRSVP = useCallback(async (id: string, updates: Partial<RSVPDoc>) => {
     const docRef = doc(db, 'guests', id);
@@ -644,8 +753,11 @@ export function useAccommodations(eventId: string) {
   const [accommodations, setAccommodations] = useState<AccommodationDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { authChecked } = useAuthReady();
 
   useEffect(() => {
+    if (!authChecked) return;
+
     if (!eventId) {
       setAccommodations([]);
       setLoading(false);
@@ -653,6 +765,7 @@ export function useAccommodations(eventId: string) {
     }
 
     setLoading(true);
+    setError(null);
     const q = query(collection(db, 'accommodations'), where('eventId', '==', eventId));
 
     const unsubscribe = onSnapshot(
@@ -665,15 +778,26 @@ export function useAccommodations(eventId: string) {
         setAccommodations(data);
         setLoading(false);
       },
-      (err) => {
-        console.error('useAccommodations error:', err);
+      async (err) => {
+        console.error('useAccommodations error:', err.code, err.message);
         setError(err.message);
-        setLoading(false);
+        try {
+          const snap = await getDocs(q);
+          const data = snap.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as AccommodationDoc[];
+          setAccommodations(data);
+        } catch (fallbackErr) {
+          console.error('useAccommodations fallback fetch also failed:', fallbackErr);
+        } finally {
+          setLoading(false);
+        }
       }
     );
 
     return () => unsubscribe();
-  }, [eventId]);
+  }, [eventId, authChecked]);
 
   const updateRoomAssignment = useCallback(async (id: string, updates: Partial<AccommodationDoc>) => {
     const docRef = doc(db, 'accommodations', id);
@@ -699,6 +823,7 @@ export interface GuestDoc {
 export function useGuests(eventId: string) {
   const [guests, setGuests] = useState<GuestDoc[]>([]);
   const [loading, setLoading] = useState(false);
+  const { authChecked } = useAuthReady();
 
   const fetchGuests = useCallback(async () => {
     if (!eventId) {
@@ -722,13 +847,15 @@ export function useGuests(eventId: string) {
   }, [eventId]);
 
   useEffect(() => {
+    // Wait for auth/token to be ready on a refresh before the initial fetch.
+    if (!authChecked) return;
     fetchGuests();
-  }, [fetchGuests]);
+  }, [fetchGuests, authChecked]);
 
   return { guests, loading, fetchGuests };
 }
 
-// ---------- FIXED useWhatsApp ----------
+// ---------- useWhatsApp ----------
 export interface WhatsAppTemplate {
   id: string;
   name?: string;
@@ -764,7 +891,6 @@ export function useWhatsApp() {
 
   const saveTemplate = useCallback(async (data: Partial<WhatsAppTemplate>) => {
     try {
-      // Use addDoc to auto-generate a unique ID
       const docRef = await addDoc(collection(db, 'whatsappTemplates'), {
         ...data,
         createdAt: Timestamp.now(),
@@ -779,13 +905,11 @@ export function useWhatsApp() {
 
   const logMessage = useCallback(async (data: Record<string, any>) => {
     try {
-      // Use addDoc to auto-generate a unique ID
       const docRef = await addDoc(collection(db, 'whatsappLogs'), {
         ...data,
         sentAt: data.sentAt || new Date().toISOString(),
         createdAt: Timestamp.now(),
         timestamp: Timestamp.now(),
-        // Add a unique client-side ID to prevent duplicates
         logId: `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       });
       return docRef.id;
@@ -795,7 +919,6 @@ export function useWhatsApp() {
     }
   }, []);
 
-  // Optional: Add a function to check if a log already exists
   const checkDuplicateLog = useCallback(async (guestId: string, eventId: string, content: string) => {
     try {
       const q = query(
@@ -813,11 +936,11 @@ export function useWhatsApp() {
     }
   }, []);
 
-  return { 
-    templates, 
-    loading, 
-    saveTemplate, 
+  return {
+    templates,
+    loading,
+    saveTemplate,
     logMessage,
-    checkDuplicateLog 
+    checkDuplicateLog
   };
 }

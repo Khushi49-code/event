@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -27,48 +27,96 @@ export interface PlanExpiryInfo {
  * Expects Firestore fields: users/{uid}.planName (string), users/{uid}.planExpiryDate (Timestamp | string)
  */
 export function usePlanExpiry(): PlanExpiryInfo {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  // ✅ providers/AuthProvider just re-exports contexts/AuthContext's useAuth,
+  // whose User type only has `id` (set from firebaseUser.uid) — there is no
+  // `uid` field on it. Use `user.id` everywhere below.
   const [planName, setPlanName] = useState<string | null>(null);
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) {
+    // ✅ Check if auth is still loading
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
+
+    // ✅ Check if user exists and has id
+    if (!user || !user.id) {
+      console.log('usePlanExpiry: No user found');
       setPlanName(null);
       setExpiryDate(null);
       setLoading(false);
       return;
     }
 
-    const userRef = doc(db, 'users', user.uid);
+    console.log('usePlanExpiry: Setting up listener for user:', user.id);
+
+    // ✅ Make sure db is initialized
+    if (!db) {
+      console.error('Firestore db is not initialized');
+      setLoading(false);
+      return;
+    }
+
+    const userRef = doc(db, 'users', user.id);
+
+    const applyData = (data: Record<string, any> | undefined) => {
+      setPlanName(data?.planName || null);
+
+      const raw = data?.planExpiryDate;
+      if (!raw) {
+        setExpiryDate(null);
+      } else if (raw?.toDate) {
+        // Firestore Timestamp
+        setExpiryDate(raw.toDate());
+      } else if (typeof raw === 'string' || typeof raw === 'number') {
+        setExpiryDate(new Date(raw));
+      } else {
+        setExpiryDate(null);
+      }
+    };
+
+    let cancelled = false;
+
     const unsubscribe = onSnapshot(
       userRef,
       (snap) => {
+        if (cancelled) return;
         const data = snap.data();
-
-        setPlanName(data?.planName || null);
-
-        const raw = data?.planExpiryDate;
-        if (!raw) {
-          setExpiryDate(null);
-        } else if (raw?.toDate) {
-          // Firestore Timestamp
-          setExpiryDate(raw.toDate());
-        } else if (typeof raw === 'string' || typeof raw === 'number') {
-          setExpiryDate(new Date(raw));
-        } else {
-          setExpiryDate(null);
-        }
+        console.log('usePlanExpiry: Data received:', data);
+        applyData(data);
         setLoading(false);
       },
-      (err) => {
-        console.error('usePlanExpiry error:', err);
-        setLoading(false);
+      async (err) => {
+        // 🔥 FIX: The realtime listener can transiently fail right after a
+        // page reload (e.g. the Firestore auth token hasn't fully
+        // propagated yet even though `user` is already set) — see the same
+        // class of bug documented in useEvents() in hooks/useFirebase.ts.
+        // Previously this just logged and left `planName` stuck at null
+        // forever, which showed as "No Plan" in the sidebar until the user
+        // logged out and back in. Fall back to a one-shot getDoc instead of
+        // giving up, so a transient listener error doesn't require a
+        // manual re-login to recover.
+        console.error('usePlanExpiry onSnapshot error, falling back to getDoc:', err);
+        try {
+          const snap = await getDoc(userRef);
+          if (cancelled) return;
+          applyData(snap.exists() ? snap.data() : undefined);
+        } catch (fallbackErr) {
+          console.error('usePlanExpiry fallback getDoc also failed:', fallbackErr);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
       }
     );
 
-    return () => unsubscribe();
-  }, [user]);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user, authLoading]);
 
   let daysLeft: number | null = null;
   let status: PlanExpiryStatus = 'none';
@@ -88,5 +136,5 @@ export function usePlanExpiry(): PlanExpiryInfo {
     else status = 'ok';
   }
 
-  return { planName, expiryDate, daysLeft, status, loading };
+  return { planName, expiryDate, daysLeft, status, loading: loading || authLoading };
 }

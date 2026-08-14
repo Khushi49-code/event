@@ -44,7 +44,7 @@ export default function DashboardLayout({
         <Navbar />
         <main className="flex-1 overflow-y-auto p-6 min-w-0 [container-type:inline-size] relative">
           {/* 🌟 GLOBAL SUPPORT BUTTON */}
-          <div className="fixed bottom-8 right-8 z-50">
+          <div className="fixed bottom-8 right-6 z-50">
             <Link href="/support">
               <Button className="rounded-full shadow-lg px-4 py-6 gap-2 bg-blue-600 hover:bg-blue-700 text-white">
                 <HelpCircle className="h-5 w-5" />

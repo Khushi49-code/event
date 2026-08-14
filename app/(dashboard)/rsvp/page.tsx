@@ -1,17 +1,16 @@
-// app/(dashboard)/rsvp/page.tsx
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { useRSVP, useEvents } from '@/hooks/useFirebase';
-import { Loader2, Filter, Download, Link as LinkIcon, Copy, ChevronLeft, ChevronRight, Search, Mail, Phone, Users } from 'lucide-react';
+import { Loader2, Download, Link as LinkIcon, Copy, ChevronLeft, ChevronRight, Search, Mail, Phone, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Simple inline WhatsApp glyph (lucide-react has no brand icon for it)
 function WhatsAppIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -22,7 +21,16 @@ function WhatsAppIcon({ className = 'h-4 w-4' }: { className?: string }) {
 }
 
 export default function RSVPPage() {
-  const [selectedEvent, setSelectedEvent] = useState('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // selectedEvent is initialized from and kept in sync with the URL
+  // (?event=xxx) instead of only local state. Plain useState('') means a
+  // refresh always resets it to empty, so the page shows "Select an event
+  // above" and looks like RSVP data disappeared even though it's still
+  // sitting in Firestore. Reading it from the URL on mount makes a
+  // refresh (or a shared/bookmarked link) land back on the same event.
+  const [selectedEvent, setSelectedEvent] = useState(() => searchParams.get('event') || '');
   const [filter, setFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -30,11 +38,18 @@ export default function RSVPPage() {
   const { rsvps, loading, updateRSVP } = useRSVP(selectedEvent);
   const { events, loading: eventsLoading } = useEvents();
 
-  // Look up whichever invitation card exists for the selected event, directly
-  // from the 'invitations' collection (every invitation doc has an `eventId`
-  // field pointing back to its event) — no dependency on the event doc itself.
   const [invitationId, setInvitationId] = useState<string | null>(null);
   const [invitationLoading, setInvitationLoading] = useState(false);
+
+  // If the URL's ?event= changes externally (back/forward nav, a shared
+  // link), keep local state in sync with it.
+  useEffect(() => {
+    const urlEvent = searchParams.get('event') || '';
+    if (urlEvent !== selectedEvent) {
+      setSelectedEvent(urlEvent);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     if (!selectedEvent) {
@@ -64,30 +79,64 @@ export default function RSVPPage() {
     fetchInvitation();
   }, [selectedEvent]);
 
+  const currentEventFunctions: any[] = events.find((e: any) => e.id === selectedEvent)?.functions || [];
+  const showFunctionsColumn = currentEventFunctions.length > 1;
+  const getFunctionName = (fn: any, idx: number) =>
+    fn?.name || fn?.functionName || fn?.title || `Function ${idx + 1}`;
+  const allFunctionNames = currentEventFunctions.map((fn, idx) => getFunctionName(fn, idx));
+
+  // Shows each attending function together with its own adult/children
+  // headcount, e.g. "Haldi (2A), Sangeet (3A+1C)" — falls back to a plain
+  // name list for RSVPs saved before per-function counts existed.
+  const getFunctionsLabel = (rsvp: any) => {
+    if (!showFunctionsColumn) return null;
+    if (rsvp.status !== 'Confirmed') return '-';
+    const attending: string[] = Array.isArray(rsvp.attendingFunctions) ? rsvp.attendingFunctions : [];
+    if (attending.length === 0) return 'Not specified';
+
+    const functionGuests: Record<string, { adults?: number; children?: number }> =
+      rsvp.functionGuests && typeof rsvp.functionGuests === 'object' ? rsvp.functionGuests : {};
+
+    return attending
+      .map((name) => {
+        const count = functionGuests[name];
+        if (!count) return name;
+        const bits: string[] = [];
+        if (count.adults) bits.push(`${count.adults}A`);
+        if (count.children) bits.push(`${count.children}C`);
+        return bits.length > 0 ? `${name} (${bits.join('+')})` : name;
+      })
+      .join(', ');
+  };
+
   const handleStatusUpdate = async (id: string, status: string) => {
     try {
-      await updateRSVP(id, { status });
+      const updates: any = { status: status };
+      if (status === 'Declined') {
+        updates.adults = 0;
+        updates.children = 0;
+        updates.guests = 0;
+      }
+      await updateRSVP(id, updates);
       toast.success('RSVP status updated');
     } catch (error) {
       toast.error('Error updating status');
     }
   };
 
-  // Builds a personalized invitation link for a single guest, pointing at
-  // the actual invitation card found above for this event.
   const buildGuestLink = (rsvp: any) => {
     const base = typeof window !== 'undefined' ? window.location.origin : '';
     const params = new URLSearchParams({
       guest: rsvp.name || 'Guest',
       rsvpId: rsvp.id,
     });
-    return `${base}/invitations/view/${invitationId}?${params.toString()}`;
+    return base + '/invitations/view/' + invitationId + '?' + params.toString();
   };
 
   const handleCopyLink = (rsvp: any) => {
     const link = buildGuestLink(rsvp);
     navigator.clipboard.writeText(link);
-    toast.success(`Link copied for ${rsvp.name || 'guest'}`);
+    toast.success('Link copied for ' + (rsvp.name || 'guest'));
   };
 
   const handleSendWhatsApp = (rsvp: any) => {
@@ -97,11 +146,10 @@ export default function RSVPPage() {
     }
     const eventName = events.find((e: any) => e.id === selectedEvent)?.eventName || 'our event';
     const link = buildGuestLink(rsvp);
-    const message = `Hi ${rsvp.name || 'there'}! You're invited to ${eventName} 🎉\nHere's your personal invitation:\n${link}`;
+    const message = 'Hi ' + (rsvp.name || 'there') + '! You are invited to ' + eventName + '\nHere is your personal invitation:\n' + link;
 
-    // Normalize phone: strip spaces/dashes/parentheses, keep leading +
     const cleanPhone = rsvp.phone.replace(/[^\d+]/g, '');
-    const whatsappUrl = `https://wa.me/${cleanPhone.replace('+', '')}?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = 'https://wa.me/' + cleanPhone.replace('+', '') + '?text=' + encodeURIComponent(message);
     window.open(whatsappUrl, '_blank');
   };
 
@@ -112,50 +160,54 @@ export default function RSVPPage() {
       return;
     }
     if (!invitationId) {
-      toast.error('Generate the invitation card first (Invitation Builder → Generate Invitation)');
+      toast.error('Generate the invitation card first');
       return;
     }
 
-    toast.success(`Opening WhatsApp for ${withPhone.length} guest(s)... allow pop-ups if your browser blocks them.`);
+    toast.success('Opening WhatsApp for ' + withPhone.length + ' guest(s)');
 
-    // wa.me only supports one chat at a time (no true bulk-send without the
-    // WhatsApp Business API), so we open each guest's pre-filled chat with a
-    // short stagger to avoid the browser blocking a burst of popups.
     withPhone.forEach((rsvp: any, i: number) => {
       setTimeout(() => handleSendWhatsApp(rsvp), i * 700);
     });
   };
 
   const exportData = () => {
+    const header = ['Name', 'Email', 'Phone', 'Guests', 'Adults', 'Children', 'Status', 'Personal Link'];
+    if (showFunctionsColumn) header.push('Functions Attending');
+
     const csv = [
-      ['Name', 'Email', 'Phone', 'Guests', 'Adults', 'Children', 'Status', 'Personal Link'],
-      ...filteredRSVPs.map((r: any) => [
-        r.name || 'N/A',
-        r.email || 'N/A',
-        r.phone || 'N/A',
-        r.guests || 0,
-        r.adults || 0,
-        r.children || 0,
-        r.status || 'Pending',
-        selectedEvent ? buildGuestLink(r) : '',
-      ])
+      header,
+      ...filteredRSVPs.map((r: any) => {
+        const display = getDisplayGuests(r);
+        const row = [
+          r.name || 'N/A',
+          r.email || 'N/A',
+          r.phone || 'N/A',
+          display.guests,
+          display.adults,
+          display.children,
+          r.status || 'Pending',
+          selectedEvent ? buildGuestLink(r) : '',
+        ];
+        if (showFunctionsColumn) row.push(getFunctionsLabel(r) || 'N/A');
+        return row;
+      })
     ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `rsvp_data_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = 'rsvp_data_' + new Date().toISOString().split('T')[0] + '.csv';
     a.click();
     window.URL.revokeObjectURL(url);
     toast.success('Data exported successfully!');
   };
 
-  // Filter RSVPs based on status and search
   const filteredRSVPs = rsvps.filter((r: any) => {
     const statusMatch = filter === 'All' || r.status === filter;
     const searchLower = searchTerm.toLowerCase();
-    const searchMatch = !searchTerm || 
+    const searchMatch = !searchTerm ||
       r.name?.toLowerCase().includes(searchLower) ||
       r.email?.toLowerCase().includes(searchLower) ||
       r.phone?.toLowerCase().includes(searchLower) ||
@@ -163,13 +215,11 @@ export default function RSVPPage() {
     return statusMatch && searchMatch;
   });
 
-  // Pagination logic
   const totalPages = Math.ceil(filteredRSVPs.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentRSVPs = filteredRSVPs.slice(startIndex, endIndex);
 
-  // Reset to first page when search or filter changes
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setCurrentPage(1);
@@ -181,23 +231,47 @@ export default function RSVPPage() {
   };
 
   const handleEventChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedEvent(e.target.value);
+    const newEvent = e.target.value;
+    setSelectedEvent(newEvent);
     setSearchTerm('');
     setFilter('All');
     setCurrentPage(1);
+
+    // Push the choice into the URL so a refresh (or sharing the link)
+    // comes back to the same event instead of resetting to "Select Event".
+    const params = new URLSearchParams(Array.from(searchParams.entries()));
+    if (newEvent) {
+      params.set('event', newEvent);
+    } else {
+      params.delete('event');
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  // Handle page change
   const goToPage = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
-  const statusClasses = (status?: string) =>
-    status === 'Confirmed'
-      ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-      : status === 'Pending'
-      ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-      : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+  const getDisplayGuests = (rsvp: any) => {
+    if (rsvp.status === 'Declined') {
+      return { guests: 0, adults: 0, children: 0 };
+    }
+    return {
+      guests: rsvp.guests || 0,
+      adults: rsvp.adults || 0,
+      children: rsvp.children || 0,
+    };
+  };
+
+  const statusClasses = (status?: string) => {
+    if (status === 'Confirmed') return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
+    if (status === 'Pending') return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300';
+    return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+  };
+
+  const invitationViewUrl = invitationId
+    ? (typeof window !== 'undefined' ? window.location.origin : '') + '/invitations/view/' + invitationId
+    : '';
 
   if (loading) {
     return (
@@ -235,7 +309,7 @@ export default function RSVPPage() {
       {selectedEvent && invitationLoading && (
         <div className="flex items-center gap-2 text-sm text-gray-500 px-1">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Checking for an invitation card...
+          <span>Checking for an invitation card...</span>
         </div>
       )}
 
@@ -244,11 +318,11 @@ export default function RSVPPage() {
           <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-300 min-w-0">
             <LinkIcon className="h-4 w-4 shrink-0" />
             <span className="truncate">
-              Invitation card is ready — each guest below has their own personal link to it.
+              Invitation card is ready. Each guest below has their own personal link to it.
             </span>
           </div>
-          <a
-            href={`${typeof window !== 'undefined' ? window.location.origin : ''}/invitations/view/${invitationId}`}
+          
+            <a href={invitationViewUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm font-medium text-green-700 dark:text-green-300 underline shrink-0"
@@ -317,22 +391,21 @@ export default function RSVPPage() {
           )}
           {selectedEvent && !invitationLoading && !invitationId && (
             <p className="text-sm text-amber-600 mb-3">
-              No invitation card has been generated for this event yet — go to Invitation Builder and click "Generate Invitation" first, otherwise guest links won't open a real card.
+              No invitation card has been generated for this event yet. Go to Invitation Builder and click Generate Invitation first.
             </p>
           )}
           {selectedEvent && (
             <>
               {currentRSVPs.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 text-sm">
-                  {searchTerm 
-                    ? 'No RSVPs match your search' 
-                    : filter !== 'All' 
-                    ? `No ${filter} RSVPs found` 
+                  {searchTerm
+                    ? 'No RSVPs match your search'
+                    : filter !== 'All'
+                    ? 'No ' + filter + ' RSVPs found'
                     : 'No RSVP responses found'}
                 </p>
               ) : (
                 <>
-                  {/* Mobile: stacked cards */}
                   <div className="space-y-3 md:hidden">
                     {currentRSVPs.map((rsvp: any) => (
                       <div
@@ -342,7 +415,7 @@ export default function RSVPPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="font-medium truncate">{rsvp.name || 'N/A'}</p>
-                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs ${statusClasses(rsvp.status)}`}>
+                            <span className={'inline-block mt-1 px-2 py-0.5 rounded-full text-xs ' + statusClasses(rsvp.status)}>
                               {rsvp.status || 'Pending'}
                             </span>
                           </div>
@@ -380,9 +453,15 @@ export default function RSVPPage() {
                           <div className="flex items-center gap-2">
                             <Users className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                             <span>
-                              {rsvp.guests || 0} total &middot; {rsvp.adults || 0} adults &middot; {rsvp.children || 0} kids
+                              {getDisplayGuests(rsvp).guests} total, {getDisplayGuests(rsvp).adults} adults, {getDisplayGuests(rsvp).children} kids
                             </span>
                           </div>
+                          {showFunctionsColumn && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-gray-400 shrink-0">Functions:</span>
+                              <span className="truncate">{getFunctionsLabel(rsvp)}</span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="mt-3">
@@ -400,7 +479,6 @@ export default function RSVPPage() {
                     ))}
                   </div>
 
-                  {/* Desktop / tablet: table */}
                   <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -411,6 +489,7 @@ export default function RSVPPage() {
                           <TableHead>Total Guests</TableHead>
                           <TableHead>Adults</TableHead>
                           <TableHead>Children</TableHead>
+                          {showFunctionsColumn && <TableHead>Functions</TableHead>}
                           <TableHead>Status</TableHead>
                           <TableHead>Invite Link</TableHead>
                           <TableHead>Action</TableHead>
@@ -422,11 +501,16 @@ export default function RSVPPage() {
                             <TableCell className="font-medium">{rsvp.name || 'N/A'}</TableCell>
                             <TableCell>{rsvp.email || 'N/A'}</TableCell>
                             <TableCell>{rsvp.phone || 'N/A'}</TableCell>
-                            <TableCell>{rsvp.guests || 0}</TableCell>
-                            <TableCell>{rsvp.adults || 0}</TableCell>
-                            <TableCell>{rsvp.children || 0}</TableCell>
+                            <TableCell>{getDisplayGuests(rsvp).guests}</TableCell>
+                            <TableCell>{getDisplayGuests(rsvp).adults}</TableCell>
+                            <TableCell>{getDisplayGuests(rsvp).children}</TableCell>
+                            {showFunctionsColumn && (
+                              <TableCell className="max-w-[220px] truncate" title={getFunctionsLabel(rsvp) || ''}>
+                                {getFunctionsLabel(rsvp)}
+                              </TableCell>
+                            )}
                             <TableCell>
-                              <span className={`px-2 py-1 rounded-full text-xs ${statusClasses(rsvp.status)}`}>
+                              <span className={'px-2 py-1 rounded-full text-xs ' + statusClasses(rsvp.status)}>
                                 {rsvp.status || 'Pending'}
                               </span>
                             </TableCell>
@@ -469,7 +553,6 @@ export default function RSVPPage() {
                 </>
               )}
 
-              {/* Pagination Controls */}
               {filteredRSVPs.length > 0 && (
                 <div className="flex flex-col gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-gray-500">
@@ -509,11 +592,11 @@ export default function RSVPPage() {
                         const maxVisible = 3;
                         let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
                         let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-                        
+
                         if (endPage - startPage + 1 < maxVisible) {
                           startPage = Math.max(1, endPage - maxVisible + 1);
                         }
-                        
+
                         if (startPage > 1) {
                           pages.push(
                             <Button
@@ -529,12 +612,12 @@ export default function RSVPPage() {
                           if (startPage > 2) {
                             pages.push(
                               <span key="ellipsis1" className="px-1 text-gray-400">
-                                …
+                                ...
                               </span>
                             );
                           }
                         }
-                        
+
                         for (let i = startPage; i <= endPage; i++) {
                           pages.push(
                             <Button
@@ -548,12 +631,12 @@ export default function RSVPPage() {
                             </Button>
                           );
                         }
-                        
+
                         if (endPage < totalPages) {
                           if (endPage < totalPages - 1) {
                             pages.push(
                               <span key="ellipsis2" className="px-1 text-gray-400">
-                                …
+                                ...
                               </span>
                             );
                           }
@@ -569,7 +652,7 @@ export default function RSVPPage() {
                             </Button>
                           );
                         }
-                        
+
                         return pages;
                       })()}
                     </div>

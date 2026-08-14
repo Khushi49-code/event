@@ -40,12 +40,14 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
+      // Create user - this automatically logs them in
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
         formData.password
       );
 
+      // Update user profile with name
       await updateProfile(userCredential.user, {
         displayName: formData.name,
       });
@@ -59,11 +61,18 @@ export default function RegisterPage() {
       });
 
       toast.success('Account created successfully!');
+      
+      // Redirect to home page (user is already logged in)
       router.push('/');
+      
     } catch (error: any) {
       console.error('Registration error:', error);
       if (error.code === 'auth/email-already-in-use') {
         toast.error('Email already in use. Please login.');
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('Password is too weak. Please use a stronger password.');
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('Invalid email address. Please check and try again.');
       } else {
         toast.error('Registration failed. Please try again.');
       }
@@ -88,7 +97,6 @@ export default function RegisterPage() {
               </div>
               <div className="flex flex-col items-start">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EventFlux</h1>
-
               </div>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">Create your account</p>

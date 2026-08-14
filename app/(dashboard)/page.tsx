@@ -2,6 +2,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -33,6 +36,13 @@ import {
   GuestChart
 } from '@/components/charts';
 
+interface CurrentUserData {
+  name?: string;
+  email?: string;
+  role?: string;
+  [key: string]: any;
+}
+
 export default function DashboardPage() {
   const { events, loading: eventsLoading } = useEvents();
   const [selectedEvent, setSelectedEvent] = useState('');
@@ -40,6 +50,35 @@ export default function DashboardPage() {
   const { trend: trendData, loading: trendLoading } = useWeeklyTrend(selectedEvent);
   const { overview: eventsOverview, loading: overviewLoading } = useEventsOverview(events);
   const { activity, loading: activityLoading } = useRecentActivity(selectedEvent);
+
+  // ---- Logged-in user's own data (name/email/role) for the welcome banner ----
+  const [currentUser, setCurrentUser] = useState<CurrentUserData | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setCurrentUser(null);
+        setUserLoading(false);
+        return;
+      }
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setCurrentUser(userDocSnap.data() as CurrentUserData);
+        } else {
+          // Fall back to whatever Firebase Auth itself has
+          setCurrentUser({ name: user.displayName || undefined, email: user.email || undefined });
+        }
+      } catch (error) {
+        console.error('Error fetching current user data:', error);
+      } finally {
+        setUserLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Set first event as selected when events load
   useEffect(() => {
@@ -78,6 +117,8 @@ export default function DashboardPage() {
     );
   }
 
+  const firstName = currentUser?.name?.split(' ')[0];
+
   return (
     <div className="space-y-6">
       {/* Plan Expiry Renewal Reminder */}
@@ -87,10 +128,23 @@ export default function DashboardPage() {
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white">
         <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Welcome to EventPro</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">
+              {userLoading
+                ? 'Welcome to EventPro'
+                : firstName
+                ? `Welcome back, ${firstName}!`
+                : 'Welcome to EventPro'}
+            </h1>
             <p className="text-blue-100 mt-1">
-              Manage your events, guests, and invitations all in one place
+              {currentUser?.email
+                ? `Signed in as ${currentUser.email}`
+                : 'Manage your events, guests, and invitations all in one place'}
             </p>
+            {currentUser?.role && (
+              <Badge className="mt-2 bg-white/20 text-white border-0">
+                {currentUser.role}
+              </Badge>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/events/create">

@@ -4,11 +4,12 @@ import { Inter, Geist } from 'next/font/google';
 import './globals.css';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from 'next-themes';
-import { AuthProvider } from '@/providers/AuthProvider';
+import { AuthProvider } from '@/contexts/AuthContext'; // ✅ Correct import
 import { cn } from "@/lib/utils";
+import SupportChatbot from '@/components/SupportChatbot';
+import EventAgentWidget from '@/components/EventAgentWidget';
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
+const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
@@ -32,6 +33,8 @@ export default function RootLayout({
         >
           <AuthProvider>
             {children}
+            <EventAgentWidget />
+            <SupportChatbot />
             <Toaster 
               position="top-right"
               toastOptions={{

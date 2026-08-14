@@ -1,10 +1,10 @@
 // app/(dashboard)/invitations/builder/page.tsx
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/config'; // adjusted to match your project's lib/config.ts
+import { collection, addDoc, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -26,7 +26,11 @@ import {
   Printer,
   Sparkles,
   Camera,
-  ImagePlus
+  ImagePlus,
+  Calendar,
+  Clock,
+  MapPin,
+  Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -60,26 +64,32 @@ const colorPalettes = [
   { name: 'Pastel', colors: ['#FFB5C2', '#B5EAD7', '#C7CEEA', '#FFDAC1'] },
   {
     name: 'Royal Navy & Gold',
-    colors: ['#D4AF37', '#D4AF37', '#D4AF37', '#1B2340'], // primary, secondary, accent all gold
+    colors: ['#D4AF37', '#D4AF37', '#D4AF37', '#1B2340'],
     background: '#1B2340',
     text: '#F3E7C9',
   },
 ];
+
+interface WeddingFunction {
+  name: string;
+  date: string;
+  time: string;
+  venue: string;
+}
 
 export default function InvitationBuilderPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('template');
   const [selectedTemplate, setSelectedTemplate] = useState('wedding');
   const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedFunction, setSelectedFunction] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [savedInvitationId, setSavedInvitationId] = useState<string | null>(null);
 
-  // Images state
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [uploadedLogo, setUploadedLogo] = useState<string | null>(null);
   const [coverImage, setCoverImage] = useState<string | null>(null);
 
-  // Colors state
   const [colors, setColors] = useState({
     primary: '#D4AF37',
     secondary: '#D4AF37',
@@ -88,14 +98,12 @@ export default function InvitationBuilderPage() {
     accent: '#D4AF37',
   });
 
-  // Fonts state
   const [fonts, setFonts] = useState({
     heading: 'Playfair Display',
     body: 'Inter',
     accent: 'Montserrat',
   });
 
-  // Text content
   const [content, setContent] = useState({
     title: "You're Invited!",
     subtitle: "Join us for a celebration",
@@ -109,6 +117,7 @@ export default function InvitationBuilderPage() {
     message: '',
     rsvpText: 'Please RSVP by',
     rsvpDate: '',
+    allFunctions: [] as WeddingFunction[],
   });
 
   const { events, loading: eventsLoading } = useEvents();
@@ -116,6 +125,42 @@ export default function InvitationBuilderPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedEventData = events.find((e: any) => e.id === selectedEvent);
+
+  // 🔥 FIX: Single source of truth for functions — always read from `content.allFunctions`,
+  // which is now kept in sync (see useEffect below) instead of a second, independently
+  // computed variable that could drift out of sync with what Preview actually renders.
+  const eventFunctions: WeddingFunction[] = content.allFunctions || [];
+  const isWeddingWithFunctions =
+    selectedEventData?.eventType === 'Wedding' && eventFunctions.length > 0;
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const dt = new Date(dateStr);
+      if (isNaN(dt.getTime())) return dateStr;
+      return dt.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    try {
+      const dt = new Date(`2000-01-01T${timeStr}`);
+      if (isNaN(dt.getTime())) return timeStr;
+      return dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return timeStr;
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'gallery' | 'logo' | 'cover') => {
     const files = e.target.files;
@@ -145,7 +190,6 @@ export default function InvitationBuilderPage() {
       console.error(error);
       toast.error('Error uploading image');
     } finally {
-      // reset input so the same file can be re-selected if needed
       e.target.value = '';
     }
   };
@@ -157,8 +201,13 @@ export default function InvitationBuilderPage() {
   const removeLogo = () => setUploadedLogo(null);
   const removeCover = () => setCoverImage(null);
 
+  // Called when the user picks an event from the dropdown.
+  // Kept for the eventName/venue/host fields, but functions themselves
+  // are now synced by the useEffect below so they don't depend on this
+  // firing at exactly the right moment.
   const handleEventSelect = (eventId: string) => {
     setSelectedEvent(eventId);
+    setSelectedFunction('');
     const event = events.find((e: any) => e.id === eventId);
     if (event) {
       setContent(prev => ({
@@ -169,11 +218,55 @@ export default function InvitationBuilderPage() {
         venue: event.venue || '',
         address: event.address || '',
         host: event.hostNames || '',
+        googleMapsUrl: event.googleMapsUrl || event.googleMaps || '',
+      }));
+    } else {
+      setContent(prev => ({
+        ...prev,
+        eventName: '',
+        date: '',
+        time: '',
+        venue: '',
+        address: '',
+        host: '',
+        googleMapsUrl: '',
+        allFunctions: [],
       }));
     }
   };
 
-  // Switches to the Preview tab so the user can see the invitation as built so far
+  // 🔥 FIX: This is the actual bug fix.
+  // Previously `content.allFunctions` was ONLY set inside handleEventSelect's onChange
+  // handler. If `events` (from the Firestore onSnapshot listener in useEvents) was still
+  // loading — or updated later — at the moment the user picked an event, `selectedEventData`
+  // could be stale/undefined and `allFunctions` would silently stay `[]`, which made
+  // InvitationCard fall back to the plain single-date "WHEN / WHERE" layout instead of
+  // the per-function list, even though the data existed in Firestore all along.
+  //
+  // This effect re-derives `allFunctions` any time `selectedEvent` OR the underlying
+  // `events` array changes, so it always reflects the latest Firestore data — regardless
+  // of load timing, reselection, or live updates.
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const event = events.find((e: any) => e.id === selectedEvent);
+    if (!event) return;
+
+    const functions: WeddingFunction[] = Array.isArray(event.functions) ? event.functions : [];
+
+    setContent(prev => {
+      // Avoid unnecessary re-renders if nothing actually changed
+      const same =
+        prev.allFunctions.length === functions.length &&
+        JSON.stringify(prev.allFunctions) === JSON.stringify(functions);
+      if (same) return prev;
+      return { ...prev, allFunctions: functions };
+    });
+  }, [selectedEvent, events]);
+
+  const handleFunctionSelect = (functionName: string) => {
+    setSelectedFunction(functionName);
+  };
+
   const handlePreview = () => {
     setActiveTab('preview');
   };
@@ -186,41 +279,59 @@ export default function InvitationBuilderPage() {
 
     setIsGenerating(true);
     try {
+      // 🔥 Direct fetch from Firestore to guarantee the very latest functions,
+      // in case the event doc changed after it was loaded into `events`.
+      const eventDoc = await getDoc(doc(db, 'events', selectedEvent));
+      let allFunctions: WeddingFunction[] = [];
+
+      if (eventDoc.exists()) {
+        const eventData = eventDoc.data();
+        allFunctions = Array.isArray(eventData.functions) ? eventData.functions : [];
+        console.log('🔥🔥🔥 Functions from event (direct fetch):', allFunctions);
+      }
+
+      // Keep local preview state in sync with what we're about to save,
+      // so the Preview tab immediately reflects the freshly-fetched data too.
+      setContent(prev => ({ ...prev, allFunctions }));
+
+      const invitationContent = {
+        ...content,
+        allFunctions,
+      };
+
       const invitationData = {
         eventId: selectedEvent,
         template: selectedTemplate,
         colors,
         fonts,
-        content,
+        content: invitationContent,
         images: {
           gallery: uploadedImages,
           logo: uploadedLogo,
           cover: coverImage,
         },
+        isWedding: eventDoc.exists() && eventDoc.data()?.eventType === 'Wedding' && allFunctions.length > 0,
+        selectedFunction: selectedFunction || null,
         createdAt: serverTimestamp(),
       };
 
-      // Actually persist the invitation to Firestore — this is the core save.
+      console.log('🔥🔥🔥 INVITATION DATA BEING SAVED:', JSON.stringify(invitationData, null, 2));
+
       const docRef = await addDoc(collection(db, 'invitations'), invitationData);
       setSavedInvitationId(docRef.id);
       toast.success('Invitation generated successfully!');
       setActiveTab('preview');
 
-      // Link this invitation back to its event so other pages (RSVP, Guests)
-      // can build each guest's personal link pointing at this exact card.
-      // Kept separate/non-blocking: if this fails (e.g. Firestore rules don't
-      // allow updating the event), the invitation itself still saved fine.
       try {
         await updateDoc(doc(db, 'events', selectedEvent), {
           invitationId: docRef.id,
         });
       } catch (linkError) {
         console.error('Invitation saved, but failed to link it to the event:', linkError);
-        toast.error('Invitation saved, but guest links may not work yet (could not update the event record).');
       }
     } catch (error: any) {
       console.error('Error generating invitation:', error);
-      toast.error(`Error: ${error?.message || 'Could not generate invitation. Please try again.'}`);
+      toast.error(`Error: ${error?.message || 'Could not generate invitation.'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -256,9 +367,10 @@ export default function InvitationBuilderPage() {
     );
   }
 
+  const selectedFunctionDetails = eventFunctions.find(f => f.name === selectedFunction);
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Invitation Builder</h1>
@@ -287,7 +399,6 @@ export default function InvitationBuilderPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
           <TabsTrigger value="template">Templates</TabsTrigger>
@@ -298,7 +409,6 @@ export default function InvitationBuilderPage() {
           <TabsTrigger value="preview">Preview</TabsTrigger>
         </TabsList>
 
-        {/* Template Tab */}
         <TabsContent value="template">
           <Card>
             <CardHeader>
@@ -311,9 +421,6 @@ export default function InvitationBuilderPage() {
                     key={template.id}
                     onClick={() => {
                       setSelectedTemplate(template.id);
-                      // Each template uses a rich, dark card background by default —
-                      // auto-apply a matching gold/cream palette so the card is
-                      // legible and looks premium without extra manual steps.
                       const goldByTemplate: Record<string, string> = {
                         wedding: '#D4AF37',
                         royal: '#D4AF37',
@@ -360,7 +467,6 @@ export default function InvitationBuilderPage() {
           </Card>
         </TabsContent>
 
-        {/* Content Tab */}
         <TabsContent value="content">
           <Card>
             <CardHeader>
@@ -377,13 +483,112 @@ export default function InvitationBuilderPage() {
                   <option value="">Choose an event...</option>
                   {events.map((event: any) => (
                     <option key={event.id} value={event.id}>
-                      {event.eventName}
+                      {event.eventName} {event.eventType === 'Wedding' ? '💒' : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {isWeddingWithFunctions && (
+                <div>
+                  <Label>Select Function (for highlighting)</Label>
+                  <select
+                    value={selectedFunction}
+                    onChange={(e) => handleFunctionSelect(e.target.value)}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                  >
+                    <option value="">All Functions</option>
+                    {eventFunctions.map((fn, idx) => (
+                      <option key={idx} value={fn.name}>
+                        {fn.name || `Function ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Select a function to highlight it in the preview. All functions will be shown.
+                  </p>
+                </div>
+              )}
+
+              {selectedFunction && selectedFunctionDetails && (
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-2">
+                  <h4 className="font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-2">
+                    <Info className="h-4 w-4" />
+                    Selected Function Details
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    {selectedFunctionDetails.date && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <Calendar className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{formatDate(selectedFunctionDetails.date)}</span>
+                      </div>
+                    )}
+                    {selectedFunctionDetails.time && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{formatTime(selectedFunctionDetails.time)}</span>
+                      </div>
+                    )}
+                    {selectedFunctionDetails.venue && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <MapPin className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{selectedFunctionDetails.venue}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {isWeddingWithFunctions && eventFunctions.length > 0 && (
+                <div className="mt-4">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    All Wedding Functions ({eventFunctions.length})
+                  </Label>
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {eventFunctions.map((fn, idx) => {
+                      return (
+                        <div 
+                          key={idx}
+                          className={`p-3 rounded-lg border ${
+                            selectedFunction === fn.name 
+                              ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500' 
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <div className="font-medium text-gray-900 dark:text-white">
+                            {fn.name || `Function ${idx + 1}`}
+                          </div>
+                          <div className="mt-1 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                            {fn.date && (
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                <span>{formatDate(fn.date)}</span>
+                              </div>
+                            )}
+                            {fn.time && (
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{formatTime(fn.time)}</span>
+                              </div>
+                            )}
+                            {fn.venue && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                <span className="truncate">{fn.venue}</span>
+                              </div>
+                            )}
+                          </div>
+                          {selectedFunction === fn.name && (
+                            <Badge className="mt-2" variant="success">Selected</Badge>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
                   <Label htmlFor="title">Title</Label>
                   <Input
@@ -412,30 +617,12 @@ export default function InvitationBuilderPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="date">Date</Label>
+                  <Label htmlFor="host">Host</Label>
                   <Input
-                    id="date"
-                    value={content.date}
-                    onChange={(e) => setContent({ ...content, date: e.target.value })}
-                    placeholder="Event date"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="time">Time</Label>
-                  <Input
-                    id="time"
-                    value={content.time}
-                    onChange={(e) => setContent({ ...content, time: e.target.value })}
-                    placeholder="Event time"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="venue">Venue</Label>
-                  <Input
-                    id="venue"
-                    value={content.venue}
-                    onChange={(e) => setContent({ ...content, venue: e.target.value })}
-                    placeholder="Venue name"
+                    id="host"
+                    value={content.host}
+                    onChange={(e) => setContent({ ...content, host: e.target.value })}
+                    placeholder="Host name"
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -453,20 +640,11 @@ export default function InvitationBuilderPage() {
                     id="googleMapsUrl"
                     value={content.googleMapsUrl}
                     onChange={(e) => setContent({ ...content, googleMapsUrl: e.target.value })}
-                    placeholder="Paste a Google Maps share link — leave blank to auto-generate from venue/address"
+                    placeholder="Paste a Google Maps share link"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Tip: open the venue in Google Maps, tap Share, copy the link, and paste it here.
+                    Leave blank to auto-generate from venue/address
                   </p>
-                </div>
-                <div>
-                  <Label htmlFor="host">Host</Label>
-                  <Input
-                    id="host"
-                    value={content.host}
-                    onChange={(e) => setContent({ ...content, host: e.target.value })}
-                    placeholder="Host name"
-                  />
                 </div>
                 <div>
                   <Label htmlFor="rsvpDate">RSVP Date</Label>
@@ -493,14 +671,12 @@ export default function InvitationBuilderPage() {
           </Card>
         </TabsContent>
 
-        {/* Images Tab */}
         <TabsContent value="images">
           <Card>
             <CardHeader>
               <CardTitle>Images & Media</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Cover Image */}
               <div>
                 <Label>Cover Image</Label>
                 <div className="mt-2 relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
@@ -538,7 +714,6 @@ export default function InvitationBuilderPage() {
                 </div>
               </div>
 
-              {/* Logo */}
               <div>
                 <Label>Logo</Label>
                 <div className="mt-2 relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
@@ -571,7 +746,6 @@ export default function InvitationBuilderPage() {
                 </div>
               </div>
 
-              {/* Gallery Images */}
               <div>
                 <Label>Gallery Images</Label>
                 <div className="mt-2 relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
@@ -612,7 +786,6 @@ export default function InvitationBuilderPage() {
           </Card>
         </TabsContent>
 
-        {/* Colors Tab */}
         <TabsContent value="colors">
           <Card>
             <CardHeader>
@@ -622,7 +795,6 @@ export default function InvitationBuilderPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Color Palettes */}
               <div>
                 <Label>Color Palettes</Label>
                 <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -658,7 +830,6 @@ export default function InvitationBuilderPage() {
                 </div>
               </div>
 
-              {/* Custom Colors */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Object.entries(colors).map(([key, value]) => (
                   <div key={key}>
@@ -684,7 +855,6 @@ export default function InvitationBuilderPage() {
           </Card>
         </TabsContent>
 
-        {/* Fonts Tab */}
         <TabsContent value="fonts">
           <Card>
             <CardHeader>
@@ -730,7 +900,6 @@ export default function InvitationBuilderPage() {
           </Card>
         </TabsContent>
 
-        {/* Preview Tab — styled as an actual printed invitation card */}
         <TabsContent value="preview">
           <Card>
             <CardHeader>
@@ -756,10 +925,6 @@ export default function InvitationBuilderPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {/* Neutral "table" backdrop so the card reads like a physical print.
-                  The card itself is the shared InvitationCard component — this is
-                  the exact same component the public guest-facing page renders,
-                  so what you see here is what guests will see. */}
               <div className="flex justify-center bg-gray-100 dark:bg-gray-950 rounded-xl p-6 md:p-14">
                 <InvitationCard
                   template={selectedTemplate}
@@ -767,6 +932,7 @@ export default function InvitationBuilderPage() {
                   fonts={fonts}
                   content={content}
                   images={{ cover: coverImage, logo: uploadedLogo, gallery: uploadedImages }}
+                  selectedFunction={selectedFunction}
                 />
               </div>
             </CardContent>

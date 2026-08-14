@@ -1,100 +1,53 @@
 // components/InvitationCard.tsx
-// Single source of truth for how an invitation *card* looks.
-// Used by:
-//   - app/(dashboard)/invitations/builder/page.tsx  (live preview while editing)
-//   - app/invitations/view/[id]/page.tsx             (public guest-facing page)
-//
-// Only pass data in — this component has no Firebase/router/tab logic in it,
-// so it's safe to reuse anywhere a card needs to be rendered (builder, public
-// view, future "download as image" flow, email preview, etc).
+"use client";
 
-export type InvitationColors = {
-  primary: string;
-  secondary?: string;
-  background: string;
-  text: string;
-  accent: string;
-};
+import React from 'react';
+import { Calendar, Clock, MapPin, ExternalLink } from 'lucide-react';
 
-export type InvitationFonts = {
-  heading: string;
-  body: string;
-  accent: string;
-};
-
-export type InvitationContent = {
-  title?: string;
-  subtitle?: string;
-  eventName?: string;
-  date?: string;
-  time?: string;
-  venue?: string;
-  address?: string;
-  googleMapsUrl?: string;
-  host?: string;
-  message?: string;
-  rsvpText?: string;
-  rsvpDate?: string;
-};
-
-export type InvitationImages = {
-  cover?: string | null;
-  logo?: string | null;
-  gallery?: string[];
-};
-
-export interface InvitationCardProps {
-  template: string;
-  colors: InvitationColors;
-  fonts: InvitationFonts;
-  content: InvitationContent;
-  images?: InvitationImages;
-  /** Optional personalized greeting, e.g. "Dear Priya," — used on the public view page */
-  guestName?: string | null;
-  /** Optional fallback Google Maps link (e.g. saved on the linked event) if content.googleMapsUrl is empty */
-  fallbackMapsUrl?: string | null;
-  /** Extra classes on the outer wrapper, e.g. to control max-width per context */
-  className?: string;
+interface WeddingFunction {
+  name: string;
+  date: string;
+  time: string;
+  venue: string;
 }
 
-// Display name shown as the small eyebrow label on the card
-const TEMPLATE_NAMES: Record<string, string> = {
-  wedding: 'Wedding',
-  royal: 'Royal Navy & Gold',
-  anniversary: 'Anniversary',
-  birthday: 'Birthday',
-  corporate: 'Corporate',
-  bni: 'BNI Event',
-  custom: 'Custom',
-};
-
-// Cover photo shape per template — birthday gets a big circle photo,
-// wedding/royal get a full-width square, others get a wide rectangle.
-const PHOTO_SHAPES: Record<string, 'circle' | 'square' | 'wide'> = {
-  wedding: 'square',
-  royal: 'square',
-  anniversary: 'wide',
-  birthday: 'circle',
-  corporate: 'wide',
-  bni: 'wide',
-  custom: 'wide',
-};
-
-// A single hairline divider, optionally with a small centered diamond.
-// This is the only "decoration" on the card — real premium invitations
-// (Minted / Paperless Post style) rely on whitespace and typography,
-// not ornaments, to look expensive.
-function Divider({ color, withMark = false }: { color: string; withMark?: boolean }) {
-  if (!withMark) {
-    return <div className="h-px w-full" style={{ backgroundColor: `${color}35` }} />;
-  }
-  return (
-    <div className="flex items-center justify-center gap-3">
-      <div className="h-px flex-1" style={{ backgroundColor: `${color}35` }} />
-      <div className="w-1.5 h-1.5 rotate-45" style={{ backgroundColor: color, opacity: 0.7 }} />
-      <div className="h-px flex-1" style={{ backgroundColor: `${color}35` }} />
-    </div>
-  );
+interface InvitationCardProps {
+  template: string;
+  colors: {
+    primary: string;
+    secondary: string;
+    background: string;
+    text: string;
+    accent: string;
+  };
+  fonts: {
+    heading: string;
+    body: string;
+    accent: string;
+  };
+  content: {
+    title: string;
+    subtitle: string;
+    eventName: string;
+    date: string;
+    time: string;
+    venue: string;
+    address: string;
+    googleMapsUrl: string;
+    host: string;
+    message: string;
+    rsvpText: string;
+    rsvpDate: string;
+    allFunctions?: WeddingFunction[];
+  };
+  images: {
+    cover: string | null;
+    logo: string | null;
+    gallery: string[];
+  };
+  guestName?: string | null;
+  fallbackMapsUrl?: string | null;
+  selectedFunction?: string;
 }
 
 export default function InvitationCard({
@@ -105,199 +58,254 @@ export default function InvitationCard({
   images,
   guestName,
   fallbackMapsUrl,
-  className = '',
+  selectedFunction,
 }: InvitationCardProps) {
-  const coverImage = images?.cover || null;
-  const uploadedLogo = images?.logo || null;
-  const uploadedImages = images?.gallery || [];
-  const photoShape = PHOTO_SHAPES[template] || 'wide';
-  const templateName = TEMPLATE_NAMES[template] || 'Custom';
+  const hasFunctions = content.allFunctions && content.allFunctions.length > 0;
 
-  const mapsUrl =
-    content?.googleMapsUrl ||
-    fallbackMapsUrl ||
-    (content?.venue || content?.address
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-          [content?.venue, content?.address].filter(Boolean).join(', ')
-        )}`
-      : null);
+  console.log('🔥 InvitationCard Debug:', {
+    hasFunctions,
+    allFunctions: content.allFunctions,
+    functionsCount: content.allFunctions?.length || 0,
+  });
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const dt = new Date(dateStr);
+      if (isNaN(dt.getTime())) return dateStr;
+      return dt.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    try {
+      const dt = new Date(`2000-01-01T${timeStr}`);
+      if (isNaN(dt.getTime())) return timeStr;
+      return dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return timeStr;
+    }
+  };
+
+  const getMapsUrl = () => {
+    if (content.googleMapsUrl && content.googleMapsUrl.trim() !== '') {
+      return content.googleMapsUrl;
+    }
+    if (fallbackMapsUrl && fallbackMapsUrl.trim() !== '') {
+      return fallbackMapsUrl;
+    }
+    if (content.venue || content.address) {
+      const query = encodeURIComponent(`${content.venue} ${content.address}`.trim());
+      return `https://www.google.com/maps/search/?api=1&query=${query}`;
+    }
+    return null;
+  };
+
+  const mapsUrl = getMapsUrl();
+  const showDirections = mapsUrl !== null;
 
   return (
-    <div
-      className={`w-full max-w-[420px] ${className}`}
-      style={{
-        background: colors.background,
-        boxShadow: '0 30px 70px -25px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.18)',
+    <div 
+      className="relative w-full max-w-[420px] rounded-2xl overflow-hidden shadow-2xl transition-all mx-auto"
+      style={{ 
+        backgroundColor: colors.background,
+        color: colors.text,
+        fontFamily: fonts.body 
       }}
     >
-      {/* Single clean inset border — restrained, not double-framed or ornamented */}
-      <div
-        className="m-4 md:m-5 px-8 py-11 md:px-10 md:py-14"
-        style={{ border: `1px solid ${colors.primary}45`, fontFamily: fonts.body }}
-      >
-        {/* Cover photo or logo */}
-        {coverImage ? (
-          <div
-            className={
-              photoShape === 'circle'
-                ? 'w-28 h-28 mx-auto rounded-full overflow-hidden mb-8'
-                : 'w-full aspect-[4/3] overflow-hidden mb-8'
-            }
+      {images.cover && (
+        <div className="relative w-full overflow-hidden" style={{ backgroundColor: colors.background }}>
+          <img 
+            src={images.cover} 
+            alt="Cover" 
+            className="w-full h-auto max-h-80 object-contain mx-auto"
+            onError={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+          />
+        </div>
+      )}
+
+      {images.logo && (
+        <div className="flex justify-center -mt-10 relative z-10">
+          <img 
+            src={images.logo} 
+            alt="Logo" 
+            className="w-20 h-20 rounded-full border-4 shadow-lg object-cover"
+            style={{ borderColor: colors.background }}
+            onError={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+          />
+        </div>
+      )}
+
+      <div className="p-6 text-center">
+        {hasFunctions && (
+          <div 
+            className="inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-3"
+            style={{ backgroundColor: colors.primary, color: colors.background }}
           >
-            <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
+            💒 Wedding
           </div>
-        ) : (
-          uploadedLogo && (
-            <div className="flex justify-center mb-8">
-              <img src={uploadedLogo} alt="Logo" className="h-11 object-contain" />
-            </div>
-          )
         )}
 
-        {/* Personalized greeting (public view page only, when a guest name is present) */}
-        {guestName && (
-          <p
-            className="text-center text-sm mb-3"
-            style={{ color: colors.text, opacity: 0.8, fontFamily: fonts.accent }}
+        {content.title && (
+          <h1 
+            className="text-2xl font-bold mb-1"
+            style={{ fontFamily: fonts.heading, color: colors.primary }}
           >
-            Dear {guestName},
-          </p>
+            {content.title}
+          </h1>
         )}
 
-        {/* Eyebrow label */}
-        <p
-          className="text-center text-[0.62rem] tracking-[0.3em] uppercase mb-6"
-          style={{ color: colors.accent, fontFamily: fonts.accent, opacity: 0.8 }}
-        >
-          {templateName}
-        </p>
-
-        {/* Title */}
-        <h1
-          className="text-center leading-[1.15]"
-          style={{
-            fontFamily: fonts.heading,
-            color: colors.primary,
-            fontSize: 'clamp(1.9rem, 7vw, 2.5rem)',
-            letterSpacing: '0.01em',
-          }}
-        >
-          {content?.title}
-        </h1>
-        {content?.subtitle && (
-          <p
-            className="text-center mt-3 text-sm"
-            style={{ color: colors.text, opacity: 0.65, fontFamily: fonts.accent }}
-          >
+        {content.subtitle && (
+          <p className="text-sm mb-4 opacity-80" style={{ fontFamily: fonts.accent }}>
             {content.subtitle}
           </p>
         )}
 
-        <div className="my-8">
-          <Divider color={colors.primary} withMark />
-        </div>
-
-        {/* Event name */}
-        {content?.eventName && (
-          <p
-            className="text-center mb-7"
-            style={{
-              color: colors.text,
-              fontFamily: fonts.heading,
-              fontSize: '1.25rem',
-              letterSpacing: '0.01em',
-            }}
+        {content.eventName && (
+          <h2 
+            className="text-xl font-semibold mb-4"
+            style={{ fontFamily: fonts.heading, color: colors.secondary || colors.primary }}
           >
             {content.eventName}
-          </p>
+          </h2>
         )}
 
-        {/* Details */}
-        <div className="text-center space-y-5 text-sm" style={{ color: colors.text }}>
-          {(content?.date || content?.time) && (
-            <div>
-              <p
-                className="uppercase tracking-[0.2em] text-[0.6rem] mb-1.5 font-medium"
-                style={{ color: colors.accent, opacity: 0.85 }}
-              >
-                When
-              </p>
-              <p style={{ opacity: 0.9, fontSize: '0.95rem' }}>
-                {[content?.date, content?.time].filter(Boolean).join(' at ')}
-              </p>
-            </div>
-          )}
-          {(content?.venue || content?.address) && (
-            <div>
-              <p
-                className="uppercase tracking-[0.2em] text-[0.6rem] mb-1.5 font-medium"
-                style={{ color: colors.accent, opacity: 0.85 }}
-              >
-                Where
-              </p>
-              {content?.venue && <p style={{ opacity: 0.9, fontSize: '0.95rem' }}>{content.venue}</p>}
-              {content?.address && (
-                <p style={{ opacity: 0.55, fontSize: '0.82rem', marginTop: '2px' }}>{content.address}</p>
-              )}
-              {mapsUrl && (
-                <a
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block mt-2 text-xs underline underline-offset-4"
-                  style={{ color: colors.accent }}
+        {guestName && (
+          <p className="text-sm mb-4 italic opacity-75">For {guestName}</p>
+        )}
+
+        {/* 🔥🔥🔥 DISPLAY FUNCTIONS — 2-column grid so several functions
+            (4, 6, ...) sit side by side instead of stacking into a very
+            tall single column. */}
+        {hasFunctions ? (
+          <div className="grid grid-cols-2 gap-3 text-left mb-6">
+            {content.allFunctions!.map((fn: WeddingFunction, index: number) => {
+              const isSelected = selectedFunction === fn.name;
+              if (!fn.name && !fn.date && !fn.time && !fn.venue) return null;
+              
+              return (
+                <div 
+                  key={index}
+                  className={`p-3 rounded-lg border-l-4 transition-all min-w-0`}
+                  style={{ 
+                    borderColor: isSelected ? colors.primary : `${colors.primary}40`,
+                    backgroundColor: isSelected ? `${colors.primary}10` : 'transparent'
+                  }}
                 >
-                  Get Directions
-                </a>
-              )}
-            </div>
-          )}
-          {content?.host && (
-            <p style={{ opacity: 0.8, fontSize: '0.9rem' }}>
-              Hosted by{' '}
-              <span style={{ fontFamily: fonts.heading, opacity: 1 }}>{content.host}</span>
+                  <div className="flex items-center justify-between gap-1 mb-1.5">
+                    <h3 
+                      className="font-semibold text-sm truncate"
+                      style={{ color: isSelected ? colors.primary : colors.text, fontFamily: fonts.heading }}
+                    >
+                      {fn.name || `Function ${index + 1}`}
+                    </h3>
+                    {isSelected && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ 
+                        backgroundColor: colors.primary, color: colors.background 
+                      }}>
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="text-xs space-y-1 text-gray-600 dark:text-gray-300">
+                    {fn.date && (
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="h-3 w-3 flex-shrink-0" style={{ color: colors.primary }} />
+                        <span className="truncate">{formatDate(fn.date)}</span>
+                      </div>
+                    )}
+                    {fn.time && (
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3 w-3 flex-shrink-0" style={{ color: colors.primary }} />
+                        <span className="truncate">{formatTime(fn.time)}</span>
+                      </div>
+                    )}
+                    {fn.venue && (
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="h-3 w-3 flex-shrink-0 mt-0.5" style={{ color: colors.primary }} />
+                        <span className="line-clamp-2">{fn.venue}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-3 text-left mb-6">
+            {(content.date || content.time) && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider opacity-60" style={{ fontFamily: fonts.accent }}>
+                  <Calendar className="h-3 w-3 inline mr-1" /> When
+                </p>
+                <p className="text-sm">
+                  {content.date && <span>{formatDate(content.date)}</span>}
+                  {content.date && content.time && <span> at </span>}
+                  {content.time && <span>{formatTime(content.time)}</span>}
+                </p>
+              </div>
+            )}
+
+            {(content.venue || content.address) && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider opacity-60" style={{ fontFamily: fonts.accent }}>
+                  <MapPin className="h-3 w-3 inline mr-1" /> Where
+                </p>
+                {content.venue && <p className="text-sm">{content.venue}</p>}
+                {content.address && <p className="text-xs opacity-60 mt-1">{content.address}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showDirections && (
+          <div className="mt-2 mb-4 text-center">
+            <a 
+              href={mapsUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs px-4 py-2 rounded-full transition-all hover:scale-105"
+              style={{ backgroundColor: colors.primary, color: colors.background, fontFamily: fonts.accent }}
+            >
+              <ExternalLink className="h-3 w-3" /> Get Directions
+            </a>
+          </div>
+        )}
+
+        {content.host && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: `${colors.primary}30` }}>
+            <p className="text-sm">
+              Hosted by <span style={{ fontFamily: fonts.accent, color: colors.primary }}>{content.host}</span>
             </p>
-          )}
-        </div>
-
-        {content?.message && (
-          <p
-            className="text-center italic text-sm mt-8 leading-relaxed px-1"
-            style={{ color: colors.text, opacity: 0.65, fontFamily: fonts.accent }}
-          >
-            “{content.message}”
-          </p>
+          </div>
         )}
 
-        {(content?.rsvpText || content?.rsvpDate) && (
-          <>
-            <div className="my-8">
-              <Divider color={colors.primary} />
-            </div>
-            <div className="text-center">
-              <p
-                className="text-[0.62rem] uppercase tracking-[0.25em] mb-1.5"
-                style={{ color: colors.accent, opacity: 0.85 }}
-              >
-                {content?.rsvpText}
-              </p>
-              <p style={{ color: colors.text, fontFamily: fonts.heading, fontSize: '1rem' }}>
-                {content?.rsvpDate}
-              </p>
-            </div>
-          </>
+        {content.message && (
+          <div className="mt-3">
+            <p className="text-sm italic opacity-80">"{content.message}"</p>
+          </div>
         )}
 
-        {uploadedImages.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mt-8">
-            {uploadedImages.slice(0, 3).map((url, index) => (
-              <img
-                key={index}
-                src={url}
-                alt={`Gallery ${index + 1}`}
-                className="w-full h-16 object-cover"
-              />
-            ))}
+        {(content.rsvpDate || content.rsvpText) && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: `${colors.primary}30` }}>
+            <p className="text-xs uppercase tracking-wider opacity-60" style={{ fontFamily: fonts.accent }}>
+              {content.rsvpText || "Please RSVP by"}
+            </p>
+            {content.rsvpDate && (
+              <p className="text-sm font-semibold mt-1" style={{ color: colors.primary }}>
+                {new Date(content.rsvpDate).toLocaleDateString('en-US', {
+                  month: 'long', day: 'numeric', year: 'numeric'
+                })}
+              </p>
+            )}
           </div>
         )}
       </div>

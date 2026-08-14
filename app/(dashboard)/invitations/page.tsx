@@ -1,7 +1,7 @@
 // app/(dashboard)/invitations/page.tsx
 "use client";
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/config'; // adjusted to match your project's lib/config.ts
@@ -26,7 +26,11 @@ import {
   Printer,
   Sparkles,
   Camera,
-  ImagePlus
+  ImagePlus,
+  Calendar,
+  Clock,
+  MapPin,
+  Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -59,11 +63,19 @@ const colorPalettes = [
   { name: 'Pastel', colors: ['#FFB5C2', '#B5EAD7', '#C7CEEA', '#FFDAC1'], background: '#FFFFFF', text: '#1F2937' },
 ];
 
+interface WeddingFunction {
+  name: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  venue: string;
+}
+
 export default function InvitationsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('template');
   const [selectedTemplate, setSelectedTemplate] = useState('wedding');
   const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedFunction, setSelectedFunction] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [savedInvitationId, setSavedInvitationId] = useState<string | null>(null);
 
@@ -89,6 +101,10 @@ export default function InvitationsPage() {
   });
 
   // Text content
+  // 🔥 FIX: added `allFunctions` to the content shape. This page previously never
+  // set this field at all, so InvitationCard always received `allFunctions: undefined`
+  // and fell back to the single-date "WHEN / WHERE" layout even for weddings that had
+  // functions saved in Firestore.
   const [content, setContent] = useState({
     title: "You're Invited!",
     subtitle: "Join us for a celebration",
@@ -102,6 +118,7 @@ export default function InvitationsPage() {
     message: '',
     rsvpText: 'Please RSVP by',
     rsvpDate: '',
+    allFunctions: [] as WeddingFunction[],
   });
 
   const { events, loading: eventsLoading } = useEvents();
@@ -109,6 +126,51 @@ export default function InvitationsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // Currently selected event object, and its wedding functions (if any).
+  // 🔥 FIX: `eventFunctions` now reads from `content.allFunctions` (kept in sync by the
+  // useEffect below) instead of a separately computed value, so the Content tab list and
+  // the Preview tab always show the exact same data.
+  const selectedEventData = events.find((e: any) => e.id === selectedEvent);
+  const eventFunctions: WeddingFunction[] = content.allFunctions || [];
+  const isWeddingWithFunctions =
+    selectedEventData?.eventType === 'Wedding' && eventFunctions.length > 0;
+
+  const formatFunctionDateTime = (date: string, time: string) => {
+    if (!date) return { date: '', time: '' };
+    const dt = new Date(time ? `${date}T${time}` : `${date}T00:00`);
+    return {
+      date: dt.toLocaleDateString(),
+      time: time ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    };
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const dt = new Date(dateStr);
+      if (isNaN(dt.getTime())) return dateStr;
+      return dt.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    try {
+      const dt = new Date(`2000-01-01T${timeStr}`);
+      if (isNaN(dt.getTime())) return timeStr;
+      return dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return timeStr;
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'gallery' | 'logo' | 'cover') => {
     const files = e.target.files;
@@ -152,6 +214,7 @@ export default function InvitationsPage() {
 
   const handleEventSelect = (eventId: string) => {
     setSelectedEvent(eventId);
+    setSelectedFunction(''); // reset function choice for the newly selected event
     const event = events.find((e: any) => e.id === eventId);
     if (event) {
       setContent(prev => ({
@@ -162,8 +225,82 @@ export default function InvitationsPage() {
         venue: event.venue || '',
         address: event.address || '',
         host: event.hostNames || '',
+        googleMapsUrl: event.googleMapsUrl || event.googleMaps || '',
+        // allFunctions is populated by the useEffect below — not set here directly,
+        // so it stays correct even if `events` is still loading at click time.
+      }));
+    } else {
+      setContent(prev => ({
+        ...prev,
+        eventName: '',
+        date: '',
+        time: '',
+        venue: '',
+        address: '',
+        host: '',
+        googleMapsUrl: '',
+        allFunctions: [],
       }));
     }
+  };
+
+  // 🔥 FIX: This is the actual bug fix for this page.
+  // `content.allFunctions` is now derived reactively from the live `events` array any
+  // time `selectedEvent` or `events` changes — instead of never being set at all (as it
+  // was before). This guarantees it reflects the latest Firestore data regardless of
+  // load timing.
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const event = events.find((e: any) => e.id === selectedEvent);
+    if (!event) return;
+
+    const functions: WeddingFunction[] = Array.isArray(event.functions) ? event.functions : [];
+
+    setContent(prev => {
+      const same =
+        prev.allFunctions.length === functions.length &&
+        JSON.stringify(prev.allFunctions) === JSON.stringify(functions);
+      if (same) return prev;
+      return { ...prev, allFunctions: functions };
+    });
+  }, [selectedEvent, events]);
+
+  // Picking a function (Haldi/Sangeet/Fera/Reception/Other) auto-fills its
+  // own date, time and venue into the invitation content. Choosing the
+  // blank "Main Event" option reverts back to the event's own date/venue.
+  const handleFunctionSelect = (functionName: string) => {
+    setSelectedFunction(functionName);
+
+    if (!functionName) {
+      if (selectedEventData) {
+        setContent(prev => ({
+          ...prev,
+          eventName: selectedEventData.eventName || '',
+          date: selectedEventData.eventDate
+            ? new Date(selectedEventData.eventDate).toLocaleDateString()
+            : '',
+          time: selectedEventData.eventDate
+            ? new Date(selectedEventData.eventDate).toLocaleTimeString()
+            : '',
+          venue: selectedEventData.venue || '',
+        }));
+      }
+      return;
+    }
+
+    const fn = eventFunctions.find((f) => f.name === functionName);
+    if (!fn) return;
+
+    const formatted = formatFunctionDateTime(fn.date, fn.time);
+    setContent(prev => ({
+      ...prev,
+      eventName: selectedEventData?.eventName
+        ? `${selectedEventData.eventName} — ${fn.name}`
+        : fn.name,
+      date: formatted.date || prev.date,
+      time: formatted.time || prev.time,
+      venue: fn.venue || selectedEventData?.venue || prev.venue,
+    }));
   };
 
   // Switches to the Preview tab so the user can see the invitation as built so far
@@ -181,15 +318,18 @@ export default function InvitationsPage() {
     try {
       const invitationData = {
         eventId: selectedEvent,
+        functionName: isWeddingWithFunctions ? (selectedFunction || null) : null,
         template: selectedTemplate,
         colors,
         fonts,
-        content,
+        content, // now includes allFunctions
         images: {
           gallery: uploadedImages,
           logo: uploadedLogo,
           cover: coverImage,
         },
+        isWedding: isWeddingWithFunctions,
+        selectedFunction: selectedFunction || null,
         createdAt: serverTimestamp(),
       };
 
@@ -236,6 +376,8 @@ export default function InvitationsPage() {
       </div>
     );
   }
+
+  const selectedFunctionDetails = eventFunctions.find(f => f.name === selectedFunction);
 
   return (
     <div className="space-y-6">
@@ -327,11 +469,109 @@ export default function InvitationsPage() {
                   <option value="">Choose an event...</option>
                   {events.map((event: any) => (
                     <option key={event.id} value={event.id}>
-                      {event.eventName}
+                      {event.eventName} {event.eventType === 'Wedding' ? '💒' : ''}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* Function selector — only shown for Wedding events that have functions defined */}
+              {isWeddingWithFunctions && (
+                <div>
+                  <Label>Function</Label>
+                  <select
+                    value={selectedFunction}
+                    onChange={(e) => handleFunctionSelect(e.target.value)}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                  >
+                    <option value="">Main Event (all functions)</option>
+                    {eventFunctions.map((fn, idx) => (
+                      <option key={idx} value={fn.name}>
+                        {fn.name || `Function ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Pick a function (Haldi, Sangeet, Fera, Reception, Other) to auto-fill its own date, time and venue into this card. All functions are always shown in the preview.
+                  </p>
+                </div>
+              )}
+
+              {selectedFunction && selectedFunctionDetails && (
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-2">
+                  <h4 className="font-semibold text-amber-800 dark:text-amber-400 flex items-center gap-2">
+                    <Info className="h-4 w-4" />
+                    Selected Function Details
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    {selectedFunctionDetails.date && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <Calendar className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{formatDate(selectedFunctionDetails.date)}</span>
+                      </div>
+                    )}
+                    {selectedFunctionDetails.time && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{formatTime(selectedFunctionDetails.time)}</span>
+                      </div>
+                    )}
+                    {selectedFunctionDetails.venue && (
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <MapPin className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>{selectedFunctionDetails.venue}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {isWeddingWithFunctions && eventFunctions.length > 0 && (
+                <div className="mt-4">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    All Wedding Functions ({eventFunctions.length})
+                  </Label>
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {eventFunctions.map((fn, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border ${
+                          selectedFunction === fn.name
+                            ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500'
+                            : 'border-gray-200 dark:border-gray-700'
+                        }`}
+                      >
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {fn.name || `Function ${idx + 1}`}
+                        </div>
+                        <div className="mt-1 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                          {fn.date && (
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>{formatDate(fn.date)}</span>
+                            </div>
+                          )}
+                          {fn.time && (
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              <span>{formatTime(fn.time)}</span>
+                            </div>
+                          )}
+                          {fn.venue && (
+                            <div className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              <span className="truncate">{fn.venue}</span>
+                            </div>
+                          )}
+                        </div>
+                        {selectedFunction === fn.name && (
+                          <Badge className="mt-2" variant="success">Selected</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -711,6 +951,7 @@ export default function InvitationsPage() {
                   fonts={fonts}
                   content={content}
                   images={{ cover: coverImage, logo: uploadedLogo, gallery: uploadedImages }}
+                  selectedFunction={selectedFunction}
                 />
               </div>
             </CardContent>

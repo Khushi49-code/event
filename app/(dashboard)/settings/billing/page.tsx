@@ -1,17 +1,19 @@
 // app/(dashboard)/settings/billing/page.tsx
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { useAuth } from '@/providers/AuthProvider';
+import { useAuth } from '@/contexts/AuthContext';
 import { usePlanExpiry } from '@/hooks/usePlanExpiry';
+import { usePaymentPlans } from '@/hooks/usePaymentPlans';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import toast from 'react-hot-toast';
 import { Check, Crown, Loader2, Mail, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 interface Plan {
   id: string;
@@ -25,6 +27,8 @@ interface Plan {
   isFree?: boolean;
   isCustom?: boolean;
   pricePerEvent?: boolean;
+  // How many event credits this purchase grants in userPlans/{uid}.maxEvents.
+  eventCredits?: number;
 }
 
 const PLANS: Plan[] = [
@@ -36,6 +40,7 @@ const PLANS: Plan[] = [
     durationLabel: 'Per Event / Year',
     description: 'Pay per event with full features',
     pricePerEvent: true,
+    eventCredits: 1,
     features: [
       'Full event management',
       'Unlimited guests per event',
@@ -65,10 +70,28 @@ const PLANS: Plan[] = [
   },
 ];
 
+// ✅ Make sure this is the default export
 export default function BillingPage() {
-  const { user } = useAuth();
-  const { planName, daysLeft, status: planStatus } = usePlanExpiry();
+  const router = useRouter();
+  const { user, loading: authLoading, firebaseUser } = useAuth();
+  const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
+  // ✅ This is the hook that actually gates event creation (userPlans/{uid}).
+  // Selecting a plan here must also update it, or canCreateEvent() on the
+  // create-event page never sees the change.
+  const { purchaseEvents, refreshPlan: refreshPaymentPlan } = usePaymentPlans();
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Redirect only after loading is complete and user is not found
+  useEffect(() => {
+    if (mounted && !authLoading && !user && !firebaseUser) {
+      router.push('/auth/signin');
+    }
+  }, [mounted, authLoading, user, firebaseUser, router]);
 
   const handleSelectPlan = async (plan: Plan) => {
     if (plan.isCustom) {
@@ -76,12 +99,18 @@ export default function BillingPage() {
       return;
     }
 
-    if (!user) {
+    const uid = user?.id || user?.uid || firebaseUser?.uid;
+    
+    if (!uid) {
       toast.error('Please sign in first');
+      router.push('/auth/signin');
       return;
     }
 
-    if (!plan.durationDays) return;
+    if (!plan.durationDays) {
+      toast.error('Invalid plan configuration');
+      return;
+    }
 
     setProcessingPlanId(plan.id);
     try {
@@ -95,8 +124,9 @@ export default function BillingPage() {
 
       const newExpiry = new Date(baseDate.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
 
+      // 1. users/{uid} — drives the plan-name/expiry badge & reminder banner
       await setDoc(
-        doc(db, 'users', user.uid),
+        doc(db, 'users', uid),
         {
           planName: plan.name,
           planId: plan.id,
@@ -106,15 +136,52 @@ export default function BillingPage() {
         { merge: true }
       );
 
+      // 2. userPlans/{uid} — drives canCreateEvent()/remainingEvents() on the
+      //    create-event page. Without this, the newly selected plan never
+      //    actually grants event credits, even though the badge above updates.
+      if (plan.pricePerEvent && plan.eventCredits) {
+        await purchaseEvents(plan.eventCredits);
+      }
+      await refreshPaymentPlan();
+
       toast.success(`${plan.name} plan activated!`);
-    } catch (error) {
+      router.refresh();
+    } catch (error: any) {
       console.error('Error updating plan:', error);
-      toast.error('Failed to update plan. Please try again.');
+      toast.error(error.message || 'Failed to update plan. Please try again.');
     } finally {
       setProcessingPlanId(null);
     }
   };
 
+  // Loading state
+  if (!mounted || authLoading || planLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-500">Loading billing information...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If no user, show message
+  if (!user && !firebaseUser) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-8 text-center max-w-lg mx-auto">
+          <h2 className="text-2xl font-bold mb-4">Please Sign In</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            You need to be signed in to manage your billing.
+          </p>
+          <Button onClick={() => router.push('/auth/signin')}>Sign In</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Main render
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="mb-8 text-center">

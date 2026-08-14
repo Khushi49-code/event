@@ -142,7 +142,7 @@ export default function Navbar() {
                 </div>
                 <div className="max-h-64 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <p className="p-4 text-center text-gray-500">No notifications</p>
+                                                <p className="p-4 text-center text-gray-500">No notifications</p>
                   ) : (
                     notifications.map((notif) => (
                       <div
