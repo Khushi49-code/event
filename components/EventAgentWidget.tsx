@@ -146,9 +146,10 @@ export default function EventAgentWidget() {
   // user yet, so there's nothing for the widget to do there either.
   const hiddenPrefixes = [
     '/invitations/view',
-    '/auth/login',
-    '/auth/register',
-    '/auth/forgot-password',
+    '/login',
+    '/register',
+    '/signup',
+    '/forgot-password',
   ];
   if (pathname && hiddenPrefixes.some((prefix) => pathname.startsWith(prefix))) {
     return null;
