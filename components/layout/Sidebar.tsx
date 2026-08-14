@@ -55,6 +55,11 @@ export default function Sidebar() {
   const { user } = useAuth();
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
+  // TODO: proper fix — add `photoURL?: string | null` and `displayName?: string | null`
+  // to the User type in AuthProvider (or import Firebase's `User` type directly)
+  // instead of relying on this `any` cast.
+  const authUser = user as any;
+
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 1024;
@@ -335,13 +340,13 @@ export default function Sidebar() {
               className="flex items-center gap-3 mb-3 hover:bg-gray-800 rounded-lg p-2 transition-colors group"
             >
               <Avatar
-                src={user?.photoURL || undefined}
-                fallback={user?.displayName || user?.email?.[0] || 'U'}
+                src={authUser?.photoURL || undefined}
+                fallback={authUser?.displayName || user?.email?.[0] || 'U'}
                 size="md"
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {user?.displayName || 'User'}
+                  {authUser?.displayName || 'User'}
                 </p>
                 <p className="text-xs text-gray-400 truncate">
                   {user?.email || ''}
@@ -356,8 +361,8 @@ export default function Sidebar() {
               className="flex justify-center mb-3 group relative"
             >
               <Avatar
-                src={user?.photoURL || undefined}
-                fallback={user?.displayName || user?.email?.[0] || 'U'}
+                src={authUser?.photoURL || undefined}
+                fallback={authUser?.displayName || user?.email?.[0] || 'U'}
                 size="md"
                 className="cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
               />

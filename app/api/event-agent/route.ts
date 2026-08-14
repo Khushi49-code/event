@@ -1,6 +1,6 @@
 // app/api/event-agent/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType, FunctionDeclaration } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -17,17 +17,30 @@ Required fields:
 Optional:
 - coupleNames (only relevant for Wedding)
 - description (string)
-- functions: an array of {name, date, time, venue} — ONLY ask about this if eventType is "Wedding" and the user mentions multiple functions (e.g. Haldi, Sangeet, Fera, Reception). Don't ask about functions for non-wedding events.
+- functions: an array of {name, date, time, venue}
+
+Wedding-specific behavior:
+- If eventType is "Wedding", proactively ask the user whether they'd like to add the individual functions — Haldi, Sangeet, Mehendi, Fera (Wedding ceremony), Reception, or any others — even if the user hasn't mentioned any yet. Don't wait for them to bring it up.
+- Ask this once, after you already know it's a Wedding (you don't need eventDate/venue/address confirmed first). For example: "Would you like to add details for the individual functions too — like Haldi, Sangeet, Fera, Reception? If yes, tell me the date, time, and venue for each one you want."
+- If they say yes, collect each function's name, date, time, and venue — a couple at a time, not all in one giant question. If a function's venue/time is the same as the main event, that's fine, just confirm it's the same.
+- If they say no / they only want the main event, don't push further — proceed with just the required fields.
+- For non-wedding events, don't ask about functions at all.
 
 Rules:
 - Ask for missing required fields conversationally, one or two at a time — don't interrogate with a long list.
 - If the user gives a relative date/time (e.g. "next Saturday evening"), ask them to confirm the exact date, since you must produce a precise ISO datetime.
 - Keep your questions short and friendly.
-- Once you have ALL required fields, call the create_event function with everything you've gathered. Do not ask for confirmation first — call it as soon as the required fields are complete.
+- Once you have ALL required fields (and, for weddings, once the functions question has been asked and resolved — either filled in or declined), call the create_event function with everything you've gathered. Do not ask for confirmation first — call it as soon as everything needed is complete.
 - If the user's message is unrelated to creating an event, gently steer them back.
 - Respond in whatever language/style the user writes in (English, Gujarati, or Hinglish).`;
 
-const CREATE_EVENT_FUNCTION = {
+// Explicitly typed as FunctionDeclaration so each nested `{ type: SchemaType.X }`
+// object is checked against the library's discriminated Schema union
+// (StringSchema | ObjectSchema | ArraySchema | ...) using its contextual
+// type, instead of being widened to the bare `SchemaType` enum. Without this
+// annotation, TS can't tell a StringSchema apart from an ObjectSchema and
+// wrongly demands a `properties` field on every entry.
+const CREATE_EVENT_FUNCTION: FunctionDeclaration = {
   name: 'create_event',
   description:
     'Call this once all required event details have been gathered from the user. This actually creates the event.',
@@ -37,6 +50,7 @@ const CREATE_EVENT_FUNCTION = {
       eventName: { type: SchemaType.STRING },
       eventType: {
         type: SchemaType.STRING,
+        format: 'enum',
         enum: ['Wedding', 'Anniversary', 'Birthday', 'Corporate', 'BNI Event', 'Conference', 'Workshop', 'Party'],
       },
       eventDate: { type: SchemaType.STRING, description: 'ISO 8601 datetime, e.g. 2026-08-20T18:00' },

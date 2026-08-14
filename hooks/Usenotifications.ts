@@ -51,12 +51,16 @@ export function formatRelativeTime(timestamp: Timestamp | null | undefined): str
  */
 export function useNotifications() {
   const { user } = useAuth();
+  // TODO (proper fix): the AuthProvider's `User` type is missing `uid`,
+  // `photoURL`, and `displayName`. Add them there (or import Firebase's
+  // `User` type) instead of casting to `any` everywhere it's used.
+  const authUser = user as any;
   const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!authUser?.uid) {
       setNotifications([]);
       setLoading(false);
       return;
@@ -65,7 +69,7 @@ export function useNotifications() {
     setLoading(true);
     const q = query(
       collection(db, 'notifications'),
-      where('userId', '==', user.uid),
+      where('userId', '==', authUser.uid),
       orderBy('createdAt', 'desc'),
       limit(20)
     );
@@ -89,7 +93,7 @@ export function useNotifications() {
     );
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, [authUser?.uid]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 

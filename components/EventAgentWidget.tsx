@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Send, Loader2, Sparkles, X, CheckCircle2 } from 'lucide-react';
 import { useEvents } from '@/hooks/useFirebase';
 import { usePaymentPlans } from '@/hooks/usePaymentPlans';
@@ -17,6 +18,7 @@ const GREETING =
   "Hi! Tell me about the event you'd like to create — name, type, date, time, venue, and who's hosting. I'll ask for anything that's missing, then create it for you.";
 
 export default function EventAgentWidget() {
+  const pathname = usePathname();
   const { createEvent } = useEvents();
   const { canCreateEvent, incrementEventCount, refreshPlan } = usePaymentPlans();
 
@@ -136,18 +138,26 @@ export default function EventAgentWidget() {
     }
   };
 
+  // Guests view their invitation cards under /invitations/view/... — this
+  // is a public-facing page, not the admin dashboard, so the AI event
+  // creation widget has no business appearing there. Hide it entirely.
+  if (pathname?.startsWith('/invitations/view')) {
+    return null;
+  }
+
   return (
     <>
-      {/* Floating launcher — stacked above the SupportChatbot ("Chat with
-          us" at bottom-24) and the page's own "Help & Support" button
-          (bottom-6), so all three sit one above another without
-          overlapping. */}
+      {/* Floating launcher — sits directly above the "Help & Support"
+          button (bottom-6, ~48px tall), leaving a clean gap between
+          the two so they read as a stacked pair rather than crowding or
+          overlapping. If the Help & Support button's height or offset
+          changes, adjust the bottom offset here to match. */}
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Create event with AI"
-          className="fixed bottom-40 right-6 z-50 flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 shadow-lg transition-colors"
+          className="fixed bottom-[5.75rem] right-6 z-50 flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 shadow-lg transition-colors"
         >
           <Sparkles className="h-5 w-5" />
           <span className="text-sm font-medium hidden sm:inline">Create with AI</span>

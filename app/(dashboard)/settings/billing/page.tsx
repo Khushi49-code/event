@@ -99,8 +99,10 @@ export default function BillingPage() {
       return;
     }
 
-    const uid = user?.id || user?.uid || firebaseUser?.uid;
-    
+    // `user` (from useAuth) only carries an `id` field — it does not have a
+    // `uid` property, so we fall back to the raw Firebase user's `uid`.
+    const uid = user?.id || firebaseUser?.uid;
+
     if (!uid) {
       toast.error('Please sign in first');
       router.push('/auth/signin');

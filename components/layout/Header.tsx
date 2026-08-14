@@ -128,7 +128,9 @@ export default function Navbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  // Avatar/name/email below are Firebase-native fields (photoURL, displayName,
+  // email) — use `firebaseUser`, not the app-level `user`.
+  const { firebaseUser } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -369,8 +371,8 @@ export default function Navbar() {
               aria-label="User menu"
             >
               <Avatar
-                src={user?.photoURL || undefined}
-                fallback={user?.displayName || user?.email?.[0] || 'U'}
+                src={firebaseUser?.photoURL || undefined}
+                fallback={firebaseUser?.displayName || firebaseUser?.email?.[0] || 'U'}
                 size="sm"
               />
               <ChevronDown size={16} className="text-gray-500 dark:text-gray-400 hidden sm:block" />
@@ -382,16 +384,16 @@ export default function Navbar() {
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                   <div className="flex items-center gap-3">
                     <Avatar
-                      src={user?.photoURL || undefined}
-                      fallback={user?.displayName || user?.email?.[0] || 'U'}
+                      src={firebaseUser?.photoURL || undefined}
+                      fallback={firebaseUser?.displayName || firebaseUser?.email?.[0] || 'U'}
                       size="lg"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 dark:text-white truncate">
-                        {user?.displayName || 'User'}
+                        {firebaseUser?.displayName || 'User'}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                        {user?.email || ''}
+                        {firebaseUser?.email || ''}
                       </p>
                     </div>
                   </div>

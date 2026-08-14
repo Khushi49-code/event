@@ -20,7 +20,10 @@ import { submitSupportRequest } from '@/lib/services/supportService';
 import { toast } from 'sonner';
 
 export default function SupportPage() {
-  const { user } = useAuth();
+  // supportService.submitSupportRequest expects a Firebase-shaped User
+  // (uid, email, displayName, photoURL). That's `firebaseUser`, not `user`
+  // (the app-level User only has fields like `.id`, no `.uid`/.displayName).
+  const { firebaseUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     subject: '',
@@ -32,7 +35,7 @@ export default function SupportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user) {
+    if (!firebaseUser) {
       toast.error('Please sign in to submit a support request');
       return;
     }
@@ -53,7 +56,7 @@ export default function SupportPage() {
     setLoading(true);
     
     try {
-      const result = await submitSupportRequest(formData, user);
+      const result = await submitSupportRequest(formData, firebaseUser);
       
       if (result.success) {
         toast.success('Support request sent successfully!');
@@ -164,7 +167,7 @@ export default function SupportPage() {
             <div className="space-y-2">
               <Label>Your Email</Label>
               <Input 
-                value={user?.email || 'Not signed in'} 
+                value={firebaseUser?.email || 'Not signed in'} 
                 disabled 
                 className="bg-gray-50 dark:bg-gray-800"
               />
@@ -174,7 +177,7 @@ export default function SupportPage() {
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={loading || !user}
+              disabled={loading || !firebaseUser}
             >
               {loading ? (
                 <>
@@ -189,7 +192,7 @@ export default function SupportPage() {
               )}
             </Button>
 
-            {!user && (
+            {!firebaseUser && (
               <p className="text-sm text-yellow-600 text-center">
                 ⚠️ Please sign in to submit a support request
               </p>

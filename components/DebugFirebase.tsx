@@ -9,7 +9,9 @@ import { useAuth } from '@/providers/AuthProvider';
 import { toast } from 'sonner';
 
 export function DebugFirebase() {
-  const { user } = useAuth();
+  // submitSupportRequest expects a Firebase-shaped User (uid, displayName,
+  // photoURL) — that's `firebaseUser`, not the app-level `user`.
+  const { firebaseUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -31,7 +33,7 @@ export function DebugFirebase() {
   };
 
   const testSupportSubmit = async () => {
-    if (!user) {
+    if (!firebaseUser) {
       toast.error('Please sign in first');
       return;
     }
@@ -45,7 +47,7 @@ export function DebugFirebase() {
         priority: 'medium' as const,
       };
 
-      const response = await submitSupportRequest(testData, user);
+      const response = await submitSupportRequest(testData, firebaseUser);
       setResult({ type: 'support', ...response });
       
       if (response.success) {
@@ -77,7 +79,7 @@ export function DebugFirebase() {
             </Button>
             <Button 
               onClick={testSupportSubmit} 
-              disabled={loading || !user}
+              disabled={loading || !firebaseUser}
             >
               Test Support Submit
             </Button>
@@ -92,13 +94,13 @@ export function DebugFirebase() {
             </div>
           )}
           
-          {user && (
+          {firebaseUser && (
             <div className="text-sm text-gray-600">
-              ✅ User: {user.email} (UID: {user.uid})
+              ✅ User: {firebaseUser.email} (UID: {firebaseUser.uid})
             </div>
           )}
           
-          {!user && (
+          {!firebaseUser && (
             <div className="text-sm text-yellow-600">
               ⚠️ Not signed in. Please sign in to test support submissions.
             </div>

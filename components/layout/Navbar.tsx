@@ -39,7 +39,9 @@ export default function Navbar() {
   ]);
 
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  // displayName/email below are Firebase-native fields — use `firebaseUser`,
+  // not the app-level `user` (which only has fields like `.id`).
+  const { firebaseUser } = useAuth();
   const pathname = usePathname();
 
   const pageTitle = pageTitles[pathname || '/'] || 'EventPro';
@@ -169,10 +171,10 @@ export default function Navbar() {
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                {user?.displayName?.[0] || 'U'}
+                {firebaseUser?.displayName?.[0] || 'U'}
               </div>
               <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {user?.displayName || 'User'}
+                {firebaseUser?.displayName || 'User'}
               </span>
               <ChevronDown
                 size={16}
@@ -185,10 +187,10 @@ export default function Navbar() {
               <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
                 <div className="p-3 border-b border-gray-200 dark:border-gray-700">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {user?.displayName || 'User'}
+                    {firebaseUser?.displayName || 'User'}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {user?.email || ''}
+                    {firebaseUser?.email || ''}
                   </p>
                 </div>
                 <div className="py-1">

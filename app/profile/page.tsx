@@ -16,20 +16,23 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  // This page needs Firebase-native fields (displayName, photoURL, uid) and
+  // passes the user straight into Firebase's updateProfile(), so it needs
+  // `firebaseUser` — the app-level `user` from useAuth() doesn't have those.
+  const { firebaseUser } = useAuth();
   const router = useRouter();
-  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [displayName, setDisplayName] = useState(firebaseUser?.displayName || '');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
 
   const handleUpdateProfile = async () => {
-    if (!user) return;
+    if (!firebaseUser) return;
     
     setLoading(true);
     try {
-      await updateProfile(user, {
+      await updateProfile(firebaseUser, {
         displayName: displayName,
       });
       toast.success('Profile updated successfully!');
@@ -112,13 +115,13 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <Avatar
-              src={user?.photoURL || undefined}
-              fallback={user?.displayName?.[0] || user?.email?.[0] || 'U'}
+              src={firebaseUser?.photoURL || undefined}
+              fallback={firebaseUser?.displayName?.[0] || firebaseUser?.email?.[0] || 'U'}
               size="xl"
               className="w-32 h-32 text-4xl"
             />
             <p className="mt-3 text-sm text-gray-600">
-              {user?.email}
+              {firebaseUser?.email}
             </p>
             <Button 
               variant="outline" 
@@ -147,7 +150,7 @@ export default function ProfilePage() {
                   variant="outline" 
                   onClick={() => {
                     setIsEditing(false);
-                    setDisplayName(user?.displayName || '');
+                    setDisplayName(firebaseUser?.displayName || '');
                   }}
                 >
                   Cancel
@@ -171,7 +174,7 @@ export default function ProfilePage() {
                 />
               ) : (
                 <p className="text-gray-900 py-2">
-                  {user?.displayName || 'Not set'}
+                  {firebaseUser?.displayName || 'Not set'}
                 </p>
               )}
             </div>
@@ -182,7 +185,7 @@ export default function ProfilePage() {
                 <Mail size={16} />
                 Email Address
               </label>
-              <p className="text-gray-900 py-2">{user?.email}</p>
+              <p className="text-gray-900 py-2">{firebaseUser?.email}</p>
             </div>
 
             {/* User ID */}
@@ -191,7 +194,7 @@ export default function ProfilePage() {
                 <Calendar size={16} />
                 User ID
               </label>
-              <p className="text-gray-500 text-sm font-mono py-2">{user?.uid}</p>
+              <p className="text-gray-500 text-sm font-mono py-2">{firebaseUser?.uid}</p>
             </div>
 
             {/* Account Status */}
