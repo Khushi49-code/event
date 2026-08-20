@@ -9,6 +9,10 @@ import {
   setDoc,
   increment,
   Timestamp,
+  collection,
+  query,
+  where,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +22,11 @@ export interface UserPlan {
   tier: 'free' | 'pro' | 'premium' | 'enterprise';
   maxEvents: number;
   eventsCreated: number;
+  // 🔥 NEW: credits permanently lost — an Active event whose invitation was
+  // already shared/downloaded, then cancelled. These never come back, even
+  // though the event itself is gone (so live active-count alone can't
+  // capture this — it has to be tracked separately).
+  forfeitedCredits?: number;
   paymentStatus: 'active' | 'pending' | 'expired' | 'none';
   planId?: string;
   purchaseDate?: string;
@@ -27,18 +36,22 @@ export interface UserPlan {
 
 export function usePaymentPlans() {
   const { user, loading: authLoading } = useAuth();
-  // ✅ AuthContext's User type only has `id` (set from firebaseUser.uid),
-  // there is no `uid` field on it — use `user.id` everywhere below.
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Default plans configuration
+  // Live count of this user's currently-Active events — the real source of
+  // truth for "how many credits are in use right now" (self-corrects,
+  // never drifts like a stored counter can).
+  const [activeEventsCount, setActiveEventsCount] = useState(0);
+  const [activeCountLoading, setActiveCountLoading] = useState(true);
+
   const PLANS: Record<string, UserPlan> = {
     free: {
       tier: 'free',
       maxEvents: 1,
       eventsCreated: 0,
+      forfeitedCredits: 0,
       paymentStatus: 'none',
       features: ['1 free event', 'Basic features', 'Email support']
     },
@@ -46,6 +59,7 @@ export function usePaymentPlans() {
       tier: 'pro',
       maxEvents: 10,
       eventsCreated: 0,
+      forfeitedCredits: 0,
       paymentStatus: 'pending',
       features: ['10 events', 'Advanced features', 'Priority support', 'WhatsApp integration']
     },
@@ -53,6 +67,7 @@ export function usePaymentPlans() {
       tier: 'premium',
       maxEvents: 25,
       eventsCreated: 0,
+      forfeitedCredits: 0,
       paymentStatus: 'pending',
       features: ['25 events', 'All features', '24/7 support', 'Custom branding']
     },
@@ -60,16 +75,14 @@ export function usePaymentPlans() {
       tier: 'enterprise',
       maxEvents: 100,
       eventsCreated: 0,
+      forfeitedCredits: 0,
       paymentStatus: 'pending',
       features: ['100 events', 'All features', 'Dedicated support', 'API access']
     }
   };
 
-  // Fetch user's plan from Firestore
   const fetchUserPlan = useCallback(async () => {
-    // ✅ CRITICAL: Check if user exists and has id
     if (!user || !user.id) {
-      console.log('No user or id found, setting default plan');
       setUserPlan(null);
       setLoading(false);
       return null;
@@ -79,44 +92,34 @@ export function usePaymentPlans() {
       setLoading(true);
       setError(null);
 
-      console.log('Fetching plan for user:', user.id);
-
-      // ✅ Make sure db is initialized
       if (!db) {
-        console.error('Firestore db is not initialized');
         throw new Error('Database not initialized');
       }
 
-      // Try to get user's plan from Firestore
       const userPlanRef = doc(db, 'userPlans', user.id);
       const userPlanDoc = await getDoc(userPlanRef);
 
       if (userPlanDoc.exists()) {
         const data = userPlanDoc.data() as UserPlan;
-        console.log('Plan found:', data);
         setUserPlan(data);
         return data;
       } else {
-        // Create default free plan for new users
         const defaultPlan: UserPlan = {
           ...PLANS.free,
           eventsCreated: 0,
+          forfeitedCredits: 0,
         };
-        
-        // Save to Firestore
         await setDoc(userPlanRef, defaultPlan);
-        console.log('Default plan created:', defaultPlan);
         setUserPlan(defaultPlan);
         return defaultPlan;
       }
     } catch (err: any) {
       console.error('Error fetching user plan:', err);
       setError(err.message);
-      
-      // Fallback to free plan if Firestore fails
       const fallbackPlan: UserPlan = {
         ...PLANS.free,
         eventsCreated: 0,
+        forfeitedCredits: 0,
       };
       setUserPlan(fallbackPlan);
       return fallbackPlan;
@@ -125,7 +128,36 @@ export function usePaymentPlans() {
     }
   }, [user]);
 
-  // Increment event count
+  // Live-count actual Active events for this user.
+  useEffect(() => {
+    if (!user || !user.id) {
+      setActiveEventsCount(0);
+      setActiveCountLoading(false);
+      return;
+    }
+
+    setActiveCountLoading(true);
+    const q = query(
+      collection(db, 'events'),
+      where('createdBy', '==', user.id),
+      where('status', '==', 'active')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setActiveEventsCount(snapshot.size);
+        setActiveCountLoading(false);
+      },
+      (err) => {
+        console.error('Error counting active events:', err);
+        setActiveCountLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
   const incrementEventCount = useCallback(async () => {
     if (!user || !user.id || !userPlan) {
       throw new Error('User not authenticated or plan not loaded');
@@ -133,10 +165,6 @@ export function usePaymentPlans() {
 
     try {
       const userPlanRef = doc(db, 'userPlans', user.id);
-      
-      if (userPlan.eventsCreated >= userPlan.maxEvents) {
-        throw new Error('Event limit reached');
-      }
 
       await updateDoc(userPlanRef, {
         eventsCreated: increment(1),
@@ -155,22 +183,60 @@ export function usePaymentPlans() {
     }
   }, [user, userPlan]);
 
-  // Check if user can create an event
+  // 🔥 NEW: permanently burn 1 credit — call this when an Active event whose
+  // invitation was already shared/downloaded gets cancelled. This is what
+  // makes the loss stick even though the event (and its live-count slot)
+  // goes away.
+  const forfeitCredit = useCallback(async () => {
+    if (!user || !user.id) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      const userPlanRef = doc(db, 'userPlans', user.id);
+      await updateDoc(userPlanRef, {
+        forfeitedCredits: increment(1),
+        updatedAt: Timestamp.now()
+      });
+
+      setUserPlan(prev => prev ? {
+        ...prev,
+        forfeitedCredits: (prev.forfeitedCredits || 0) + 1
+      } : null);
+
+      return true;
+    } catch (err: any) {
+      console.error('Error forfeiting credit:', err);
+      throw new Error(err.message || 'Failed to update credits');
+    }
+  }, [user]);
+
+  // 🔥 Total consumed = live active events + permanently forfeited credits.
+  // Cancelling an event whose invitation was never shared/downloaded frees
+  // its slot automatically (it just drops out of activeEventsCount).
+  // Cancelling one that WAS shared/downloaded doesn't — forfeitedCredits
+  // keeps holding that slot used forever.
   const canCreateEvent = useCallback(() => {
     if (!userPlan) return false;
-    return userPlan.eventsCreated < userPlan.maxEvents;
-  }, [userPlan]);
+    const consumed = activeEventsCount + (userPlan.forfeitedCredits || 0);
+    return consumed < userPlan.maxEvents;
+  }, [userPlan, activeEventsCount]);
 
-  // Get remaining events
   const remainingEvents = useCallback(() => {
     if (!userPlan) return 0;
-    return Math.max(0, userPlan.maxEvents - userPlan.eventsCreated);
-  }, [userPlan]);
+    const consumed = activeEventsCount + (userPlan.forfeitedCredits || 0);
+    return Math.max(0, userPlan.maxEvents - consumed);
+  }, [userPlan, activeEventsCount]);
 
-  // Purchase additional events
+  // 🔥 purchaseEvents now genuinely supports buying several credits in one
+  // go — pass quantity from the billing page's quantity input (e.g. qty=5
+  // for a $500 purchase at $100/event).
   const purchaseEvents = useCallback(async (eventCount: number = 1) => {
     if (!user || !user.id) {
       throw new Error('User not authenticated');
+    }
+    if (eventCount < 1) {
+      throw new Error('Quantity must be at least 1');
     }
 
     try {
@@ -188,7 +254,11 @@ export function usePaymentPlans() {
         paymentStatus: 'active'
       } : null);
 
-      toast.success(`Successfully purchased ${eventCount} additional events!`);
+      toast.success(
+        eventCount === 1
+          ? 'Successfully purchased 1 additional event!'
+          : `Successfully purchased ${eventCount} additional events!`
+      );
       return true;
     } catch (err: any) {
       console.error('Error purchasing events:', err);
@@ -196,13 +266,11 @@ export function usePaymentPlans() {
     }
   }, [user]);
 
-  // Check if user has an active plan
   const hasActivePlan = useCallback(() => {
     if (!userPlan) return false;
     return userPlan.paymentStatus === 'active' || userPlan.paymentStatus === 'pending';
   }, [userPlan]);
 
-  // Upgrade plan
   const upgradePlan = useCallback(async (newTier: 'pro' | 'premium' | 'enterprise') => {
     if (!user || !user.id) {
       throw new Error('User not authenticated');
@@ -238,26 +306,23 @@ export function usePaymentPlans() {
     }
   }, [user]);
 
-  // Refresh plan data
   const refreshPlan = useCallback(async () => {
     return await fetchUserPlan();
   }, [fetchUserPlan]);
 
-  // ✅ Load plan only when auth is loaded and user exists
   useEffect(() => {
-    // Wait for auth to finish loading
     if (!authLoading) {
-      console.log('Auth loaded, fetching plan...');
       fetchUserPlan();
     }
   }, [authLoading, fetchUserPlan]);
 
   return {
-    userPlan,
-    loading: loading || authLoading,
+    userPlan: userPlan ? { ...userPlan, eventsCreated: activeEventsCount } : null,
+    loading: loading || authLoading || activeCountLoading,
     error,
     fetchUserPlan,
     incrementEventCount,
+    forfeitCredit,
     canCreateEvent,
     remainingEvents,
     purchaseEvents,

@@ -7,41 +7,108 @@ import { Button } from '@/components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Plus, Edit, Trash2, Eye, Search, Loader2, RefreshCw, Calendar, MapPin, Tag, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { useEvents } from '@/hooks/useFirebase';
+import { useEvents, EventDoc } from '@/hooks/useFirebase';
+import { usePaymentPlans } from '@/hooks/usePaymentPlans';
 import toast from 'react-hot-toast';
 
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const { events, loading, error, deleteEvent, refreshEvents } = useEvents();
+  const { events, loading, error, deleteEvent, updateEvent, refreshEvents } = useEvents();
+  const { canCreateEvent, incrementEventCount, forfeitCredit, refreshPlan } = usePaymentPlans();
 
-  const handleDelete = async (id: string, eventName: string) => {
-    if (!confirm(`Are you sure you want to delete "${eventName}"?`)) {
+  // 🔥 Delete now acts as "Cancel" for Active events:
+  // - Active + invitation never shared/downloaded -> free cancel, credit
+  //   comes back automatically (live active-count just drops by 1).
+  // - Active + invitation WAS shared/downloaded -> credit is permanently
+  //   forfeited (forfeitCredit()) before the event is removed, so it never
+  //   comes back even though the event itself is gone.
+  // - Draft events -> always free, no credit impact either way.
+  const handleDelete = async (event: EventDoc) => {
+    const { id, eventName, status, invitationSharedAt, invitationDownloadedAt } = event;
+    const isActive = status?.toLowerCase() === 'active';
+    const wasDistributed = isActive && !!(invitationSharedAt || invitationDownloadedAt);
+
+    const confirmMsg = wasDistributed
+      ? `"${eventName}"'s invitation has already been shared/downloaded. Cancelling it will NOT refund the event credit. Continue?`
+      : `Are you sure you want to delete "${eventName}"?`;
+
+    if (!confirm(confirmMsg)) {
       return;
     }
 
     setDeletingId(id);
-    const loadingToast = toast.loading(`Deleting "${eventName}"...`);
-    
+    const loadingToast = toast.loading(
+      wasDistributed ? `Cancelling "${eventName}" (no refund)...` : `Deleting "${eventName}"...`
+    );
+
     try {
+      if (wasDistributed) {
+        await forfeitCredit();
+      }
+
       await deleteEvent(id);
-      toast.success(`"${eventName}" deleted successfully!`, { 
-        id: loadingToast,
-        duration: 3000
-      });
+
+      toast.success(
+        wasDistributed
+          ? `"${eventName}" cancelled. Credit was not refunded — invitation was already shared/downloaded.`
+          : isActive
+          ? `"${eventName}" deleted — credit refunded.`
+          : `"${eventName}" deleted successfully!`,
+        { id: loadingToast, duration: 4000 }
+      );
+
+      await refreshPlan();
     } catch (error: any) {
       console.error('Delete error:', error);
       toast.error(error.message || 'Failed to delete event. Please try again.', { 
         id: loadingToast,
         duration: 4000
       });
-      
-      // Refresh to ensure data consistency
       await refreshEvents();
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleToggleStatus = async (id: string, eventName: string, currentStatus?: string) => {
+    const isCurrentlyActive = currentStatus?.toLowerCase() === 'active';
+
+    if (!isCurrentlyActive && !canCreateEvent()) {
+      toast.error('No event credits left. Upgrade your plan to activate this event.');
+      return;
+    }
+
+    setTogglingId(id);
+    const loadingToast = toast.loading(
+      isCurrentlyActive ? `Moving "${eventName}" to draft...` : `Activating "${eventName}"...`
+    );
+
+    try {
+      const newStatus = isCurrentlyActive ? 'draft' : 'active';
+      await updateEvent(id, { status: newStatus });
+
+      if (newStatus === 'active') {
+        await incrementEventCount();
+        await refreshPlan();
+      }
+
+      await refreshEvents();
+      toast.success(
+        newStatus === 'active' ? `"${eventName}" is now Active` : `"${eventName}" moved to Draft`,
+        { id: loadingToast, duration: 3000 }
+      );
+    } catch (error: any) {
+      console.error('Status toggle error:', error);
+      toast.error(error.message || 'Failed to update status. Please try again.', {
+        id: loadingToast,
+        duration: 4000,
+      });
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -61,7 +128,6 @@ export default function EventsPage() {
     }
   };
 
-  // Filter events based on search
   const filteredEvents = events.filter((event) => {
     const searchLower = searchTerm.toLowerCase();
     return (
@@ -72,24 +138,20 @@ export default function EventsPage() {
     );
   });
 
-  // Pagination logic
   const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentEvents = filteredEvents.slice(startIndex, endIndex);
 
-  // Reset to first page when search changes
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setCurrentPage(1);
   };
 
-  // Handle page change
   const goToPage = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
-  // Get status color
   const getStatusColor = (status?: string) => {
     switch (status?.toLowerCase()) {
       case 'active':
@@ -98,12 +160,61 @@ export default function EventsPage() {
         return 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300';
       case 'cancelled':
         return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+      case 'draft':
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400';
       default:
         return 'bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300';
     }
   };
 
-  // Show error state
+  const StatusToggle = ({ event }: { event: EventDoc }) => {
+    const isActive = event.status?.toLowerCase() === 'active';
+    const isBusy = togglingId === event.id;
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleToggleStatus(event.id, event.eventName, event.status)}
+        disabled={isBusy}
+        title={isActive ? 'Active — click to move to Draft' : 'Draft — click to Activate'}
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${getStatusColor(event.status || 'draft')}`}
+      >
+        {isBusy ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <span
+            className={`inline-block w-7 h-3.5 rounded-full relative transition-colors ${
+              isActive ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-2.5 w-2.5 bg-white rounded-full shadow transition-transform ${
+                isActive ? 'translate-x-3.5' : 'translate-x-0.5'
+              }`}
+            />
+          </span>
+        )}
+        {isActive ? 'Active' : 'Draft'}
+      </button>
+    );
+  };
+
+  // 🔥 Small indicator so it's visible at a glance which active events would
+  // NOT get a refund if cancelled.
+  const DistributedBadge = ({ event }: { event: EventDoc }) => {
+    const isActive = event.status?.toLowerCase() === 'active';
+    const wasDistributed = isActive && !!(event.invitationSharedAt || event.invitationDownloadedAt);
+    if (!wasDistributed) return null;
+    return (
+      <span
+        title="Invitation already shared/downloaded — cancelling won't refund the credit"
+        className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium"
+      >
+        No refund
+      </span>
+    );
+  };
+
   if (error) {
     return (
       <div className="space-y-6 px-3 sm:px-0">
@@ -137,7 +248,6 @@ export default function EventsPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Events</h1>
@@ -164,7 +274,6 @@ export default function EventsPage() {
         </div>
       </div>
 
-      {/* Events Table */}
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3">
@@ -226,9 +335,10 @@ export default function EventsPage() {
                               <p className="text-xs text-gray-500 truncate">{event.description}</p>
                             )}
                           </div>
-                          <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs ${getStatusColor(event.status)}`}>
-                            {event.status || 'Active'}
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusToggle event={event} />
+                            <DistributedBadge event={event} />
+                          </div>
                         </div>
 
                         <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
@@ -261,7 +371,7 @@ export default function EventsPage() {
                             variant="ghost"
                             size="sm"
                             className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => handleDelete(event.id, event.eventName)}
+                            onClick={() => handleDelete(event)}
                             disabled={deletingId === event.id}
                           >
                             {deletingId === event.id ? (
@@ -318,9 +428,10 @@ export default function EventsPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(event.status)}`}>
-                                {event.status || 'Active'}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <StatusToggle event={event} />
+                                <DistributedBadge event={event} />
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex justify-end gap-1">
@@ -346,7 +457,7 @@ export default function EventsPage() {
                                   variant="ghost" 
                                   size="sm" 
                                   className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  onClick={() => handleDelete(event.id, event.eventName)}
+                                  onClick={() => handleDelete(event)}
                                   disabled={deletingId === event.id}
                                 >
                                   {deletingId === event.id ? (
@@ -365,7 +476,6 @@ export default function EventsPage() {
                 </>
               )}
 
-              {/* Pagination Controls */}
               {filteredEvents.length > 0 && (
                 <div className="flex flex-col gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-gray-500">

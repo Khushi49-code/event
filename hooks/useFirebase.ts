@@ -28,16 +28,6 @@ import {
 import toast from 'react-hot-toast';
 
 // ---------- Shared auth-ready gate ----------
-// Firebase Auth restores a persisted session asynchronously. On a page
-// refresh, onAuthStateChanged can fire with a valid `user` object before
-// that user's ID token is actually synced with the Firestore SDK's token
-// provider. Any Firestore query that fires before that sync completes can
-// silently come back permission-denied (or just empty), which shows up as
-// "data works right after login but disappears after refresh."
-//
-// Every hook below that queries Firestore with `where('...', '==', uid-ish
-// value)` waits on this gate (via its own onAuthStateChanged + forced
-// getIdToken(true)) before firing its query.
 function useAuthReady() {
   const [uid, setUid] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -75,19 +65,17 @@ export interface EventDoc {
   imageUrl?: string;
   description?: string;
   status?: string;
+  // 🔥 NEW: set once the invitation for this event has actually gone out /
+  // been downloaded. Used by the events list's Cancel/Delete action to
+  // decide whether cancelling an Active event refunds its plan credit.
+  invitationSharedAt?: any;
+  invitationDownloadedAt?: any;
   createdBy?: string;
   createdAt?: any;
   updatedAt?: any;
   [key: string]: any;
 }
 
-// Sorts by eventDate ascending, client-side. Doing this here (instead of an
-// orderBy() in the query) means the events query only filters on one field
-// (createdBy), so it never needs a Firestore composite index — a query that
-// combines where(createdBy) + orderBy(eventDate) does need one, and if that
-// index is ever missing or still building, onSnapshot fails silently and
-// the list can stay empty until a full reload. Sorting here sidesteps that
-// whole class of intermittent "no data until I relogin" bugs.
 function sortByEventDate(list: EventDoc[]): EventDoc[] {
   return [...list].sort((a, b) => {
     const aTime = a.eventDate ? new Date(a.eventDate).getTime() : 0;
@@ -105,7 +93,6 @@ export function useEvents() {
   useEffect(() => {
     if (!authChecked) return;
 
-    // Not logged in -> no events
     if (!uid) {
       setEvents([]);
       setLoading(false);
@@ -115,7 +102,6 @@ export function useEvents() {
     setLoading(true);
     setError(null);
 
-    // Single-field filter only — see sortByEventDate() above for why.
     const q = query(collection(db, 'events'), where('createdBy', '==', uid));
 
     const unsubscribe = onSnapshot(
@@ -131,9 +117,6 @@ export function useEvents() {
       async (err) => {
         console.error('useEvents onSnapshot ERROR:', err.code, err.message);
         setError(err.message);
-        // Realtime listener failed (e.g. transient permission/network
-        // hiccup) — fall back to a single one-shot fetch instead of just
-        // leaving the list empty until the user reloads/relogs in.
         try {
           const snap = await getDocs(q);
           const data = snap.docs.map((doc) => ({
@@ -164,7 +147,7 @@ export function useEvents() {
         createdBy: auth.currentUser.uid,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        status: eventData.status || 'active'
+        status: eventData.status || 'draft',
       };
       const docRef = await addDoc(eventsRef, dataToSave);
       return docRef.id;
@@ -225,7 +208,6 @@ export function useEvents() {
     }
     setLoading(true);
     try {
-      // Single-field filter only — see sortByEventDate() above.
       const q = query(collection(db, 'events'), where('createdBy', '==', auth.currentUser.uid));
       const querySnapshot = await getDocs(q);
       const data = querySnapshot.docs.map((doc) => ({
@@ -243,6 +225,39 @@ export function useEvents() {
     }
   }, []);
 
+  // 🔥 NEW: mark that this event's invitation has been shared (e.g. sent via
+  // WhatsApp). Once set, cancelling this event while Active won't refund a
+  // plan credit — see the Cancel/Delete logic on the events list page.
+  const markInvitationShared = useCallback(async (id: string) => {
+    try {
+      const eventRef = doc(db, 'events', id);
+      await updateDoc(eventRef, {
+        invitationSharedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Error marking invitation shared:', error);
+      throw new Error(error.message || 'Failed to update event');
+    }
+  }, []);
+
+  // 🔥 NEW: mark that this event's invitation has been downloaded. Call this
+  // from the invitation card's Download button.
+  const markInvitationDownloaded = useCallback(async (id: string) => {
+    try {
+      const eventRef = doc(db, 'events', id);
+      await updateDoc(eventRef, {
+        invitationDownloadedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Error marking invitation downloaded:', error);
+      throw new Error(error.message || 'Failed to update event');
+    }
+  }, []);
+
   return {
     events,
     loading,
@@ -252,6 +267,8 @@ export function useEvents() {
     updateEvent,
     getEvent,
     refreshEvents,
+    markInvitationShared,
+    markInvitationDownloaded,
   };
 }
 
@@ -675,9 +692,6 @@ export function useRSVP(eventId: string) {
   const [rsvps, setRsvps] = useState<RSVPDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Same fix as useEvents: wait for a fresh ID token before firing the
-  // Firestore query, so a page refresh doesn't race a stale/unsynced
-  // token and silently come back empty/permission-denied.
   const { authChecked } = useAuthReady();
 
   useEffect(() => {
@@ -706,9 +720,6 @@ export function useRSVP(eventId: string) {
       async (err) => {
         console.error('useRSVP onSnapshot ERROR:', err.code, err.message);
         setError(err.message);
-        // Fallback one-shot fetch, same pattern as useEvents, so a
-        // transient listener failure doesn't leave the table blank
-        // until the user manually reloads.
         try {
           const snap = await getDocs(q);
           const data = snap.docs.map((doc) => ({
@@ -847,7 +858,6 @@ export function useGuests(eventId: string) {
   }, [eventId]);
 
   useEffect(() => {
-    // Wait for auth/token to be ready on a refresh before the initial fetch.
     if (!authChecked) return;
     fetchGuests();
   }, [fetchGuests, authChecked]);

@@ -11,7 +11,7 @@ import { usePaymentPlans } from '@/hooks/usePaymentPlans';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/config';
 import toast from 'react-hot-toast';
-import { Check, Crown, Loader2, Mail, Sparkles, Zap } from 'lucide-react';
+import { Check, CreditCard, Crown, IndianRupee, Loader2, Mail, Minus, Plus, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -27,15 +27,18 @@ interface Plan {
   isFree?: boolean;
   isCustom?: boolean;
   pricePerEvent?: boolean;
-  // How many event credits this purchase grants in userPlans/{uid}.maxEvents.
   eventCredits?: number;
 }
+
+// Price per single event credit — used both for purchases and for
+// estimating total amount paid on the credits summary below.
+const PRICE_PER_CREDIT = 100;
 
 const PLANS: Plan[] = [
   {
     id: 'pro',
     name: 'Pro',
-    price: 100,
+    price: PRICE_PER_CREDIT,
     durationDays: 365,
     durationLabel: 'Per Event / Year',
     description: 'Pay per event with full features',
@@ -70,23 +73,25 @@ const PLANS: Plan[] = [
   },
 ];
 
-// ✅ Make sure this is the default export
 export default function BillingPage() {
   const router = useRouter();
   const { user, loading: authLoading, firebaseUser } = useAuth();
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
-  // ✅ This is the hook that actually gates event creation (userPlans/{uid}).
-  // Selecting a plan here must also update it, or canCreateEvent() on the
-  // create-event page never sees the change.
-  const { purchaseEvents, refreshPlan: refreshPaymentPlan } = usePaymentPlans();
+  const { userPlan, purchaseEvents, remainingEvents, refreshPlan: refreshPaymentPlan } = usePaymentPlans();
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  const getQuantity = (planId: string) => quantities[planId] ?? 1;
+  const setQuantity = (planId: string, qty: number) => {
+    const clamped = Math.max(1, Math.min(999, qty || 1));
+    setQuantities((prev) => ({ ...prev, [planId]: clamped }));
+  };
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Redirect only after loading is complete and user is not found
   useEffect(() => {
     if (mounted && !authLoading && !user && !firebaseUser) {
       router.push('/auth/signin');
@@ -99,8 +104,6 @@ export default function BillingPage() {
       return;
     }
 
-    // `user` (from useAuth) only carries an `id` field — it does not have a
-    // `uid` property, so we fall back to the raw Firebase user's `uid`.
     const uid = user?.id || firebaseUser?.uid;
 
     if (!uid) {
@@ -114,6 +117,8 @@ export default function BillingPage() {
       return;
     }
 
+    const qty = plan.pricePerEvent ? getQuantity(plan.id) : 1;
+
     setProcessingPlanId(plan.id);
     try {
       const now = new Date();
@@ -126,7 +131,6 @@ export default function BillingPage() {
 
       const newExpiry = new Date(baseDate.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
 
-      // 1. users/{uid} — drives the plan-name/expiry badge & reminder banner
       await setDoc(
         doc(db, 'users', uid),
         {
@@ -138,11 +142,8 @@ export default function BillingPage() {
         { merge: true }
       );
 
-      // 2. userPlans/{uid} — drives canCreateEvent()/remainingEvents() on the
-      //    create-event page. Without this, the newly selected plan never
-      //    actually grants event credits, even though the badge above updates.
       if (plan.pricePerEvent && plan.eventCredits) {
-        await purchaseEvents(plan.eventCredits);
+        await purchaseEvents(plan.eventCredits * qty);
       }
       await refreshPaymentPlan();
 
@@ -156,7 +157,6 @@ export default function BillingPage() {
     }
   };
 
-  // Loading state
   if (!mounted || authLoading || planLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -168,7 +168,6 @@ export default function BillingPage() {
     );
   }
 
-  // If no user, show message
   if (!user && !firebaseUser) {
     return (
       <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -183,7 +182,18 @@ export default function BillingPage() {
     );
   }
 
-  // Main render
+  // 🔥 NEW: credits summary numbers.
+  // - totalPurchased: total event credits ever bought (maxEvents).
+  // - totalPaid: estimated total money paid, at $100/credit.
+  // - active: credits currently in use (Active events, live-counted).
+  // - forfeited: credits permanently burned (cancelled after invitation was shared/downloaded).
+  // - remaining: credits still available to activate a new event.
+  const totalPurchased = userPlan?.maxEvents || 0;
+  const totalPaid = totalPurchased * PRICE_PER_CREDIT;
+  const activeUsed = userPlan?.eventsCreated || 0; // now mirrors live active-event count
+  const forfeited = userPlan?.forfeitedCredits || 0;
+  const remaining = remainingEvents();
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="mb-8 text-center">
@@ -204,10 +214,54 @@ export default function BillingPage() {
         )}
       </div>
 
+      {/* 🔥 NEW: Your Credits summary */}
+      <Card className="max-w-4xl mx-auto mb-10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <CreditCard className="h-5 w-5 text-blue-600" />
+            Your Credits
+          </CardTitle>
+          <CardDescription>Payment and event-credit history at a glance</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">Total Paid</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center justify-center gap-0.5">
+                <IndianRupee className="h-4 w-4 hidden" />${totalPaid}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">Credits Purchased</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{totalPurchased}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">Currently Active</p>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600">{activeUsed}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">Forfeited</p>
+              <p className="text-xl sm:text-2xl font-bold text-orange-600">{forfeited}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-1">Remaining</p>
+              <p className="text-xl sm:text-2xl font-bold text-green-600">{remaining}</p>
+            </div>
+          </div>
+          {forfeited > 0 && (
+            <p className="text-xs text-gray-400 mt-4 text-center">
+              Forfeited credits belonged to events that were cancelled after their invitation was already shared or downloaded — those don't come back.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
         {PLANS.map((plan) => {
           const isCurrentPlan = planName === plan.name && planStatus !== 'expired' && planStatus !== 'none';
           const isProcessing = processingPlanId === plan.id;
+          const qty = getQuantity(plan.id);
+          const totalPrice = plan.pricePerEvent && plan.price ? plan.price * qty : plan.price;
 
           let badgeNode: React.ReactNode = null;
           if (isCurrentPlan) {
@@ -267,15 +321,51 @@ export default function BillingPage() {
                     ) : plan.pricePerEvent ? (
                       <div>
                         <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                          ${plan.price}
+                          ${totalPrice}
                         </span>
-                        <span className="text-sm text-gray-500 ml-2">/ event</span>
-                        <p className="text-xs text-gray-400 mt-1">Billed annually</p>
+                        <span className="text-sm text-gray-500 ml-2">
+                          {qty > 1 ? `for ${qty} events` : '/ event'}
+                        </span>
+                        <p className="text-xs text-gray-400 mt-1">Billed annually · ${plan.price}/event</p>
                       </div>
                     ) : (
                       <span className="text-3xl font-bold text-gray-900 dark:text-white">Free</span>
                     )}
                   </div>
+
+                  {plan.pricePerEvent && (
+                    <div className="mb-6">
+                      <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                        Number of events
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(plan.id, qty - 1)}
+                          disabled={isProcessing || qty <= 1}
+                          className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={qty}
+                          onChange={(e) => setQuantity(plan.id, parseInt(e.target.value, 10))}
+                          disabled={isProcessing}
+                          className="w-16 text-center px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(plan.id, qty + 1)}
+                          disabled={isProcessing}
+                          className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <ul className="space-y-3 mb-6 flex-1">
                     {plan.features.map((feature, idx) => (
@@ -302,6 +392,8 @@ export default function BillingPage() {
                         <Mail className="mr-2 h-4 w-4" />
                         Contact Sales
                       </>
+                    ) : plan.pricePerEvent ? (
+                      qty > 1 ? `Buy ${qty} Events — $${totalPrice}` : 'Select Plan'
                     ) : isCurrentPlan ? (
                       'Renew Plan'
                     ) : (
@@ -309,9 +401,9 @@ export default function BillingPage() {
                     )}
                   </Button>
 
-                  {plan.pricePerEvent && !isCurrentPlan && (
+                  {plan.pricePerEvent && (
                     <p className="text-xs text-center text-gray-400 mt-3">
-                      Pay only for events you create
+                      Pay only for events you activate
                     </p>
                   )}
                 </CardContent>

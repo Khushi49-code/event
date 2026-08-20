@@ -40,10 +40,11 @@ const DEFAULT_WEDDING_FUNCTIONS: Omit<WeddingFunction, 'id'>[] = [
   { name: 'Reception', date: '', time: '', venue: '' },
 ];
 
+// Only these statuses trigger a plan-credit consumption. Draft is always free.
+const PAID_STATUSES = ['active'];
+
 export default function CreateEventPage() {
   const router = useRouter();
-  // ✅ AuthContext's User type only has `id` (set from firebaseUser.uid) —
-  // there is no `uid` field on it. Use `user.id` everywhere below.
   const { user, loading: authLoading } = useAuth();
   const { createEvent } = useEvents();
   const { uploadFile, uploading, progress, error: uploadError, resetUpload } = useFileUpload();
@@ -75,7 +76,10 @@ export default function CreateEventPage() {
     themeColor: '#3B82F6',
     description: '',
     imageUrl: '',
+    status: 'draft' as 'draft' | 'active',
   });
+
+  const isActiveStatus = formData.status === 'active';
 
   useEffect(() => {
     setMounted(true);
@@ -89,10 +93,10 @@ export default function CreateEventPage() {
   }, [mounted, authLoading, user, router]);
 
   useEffect(() => {
-    if (mounted && !planLoading && user && !canCreateEvent()) {
-      toast.error('You need an active plan to create events');
+    if (mounted && !planLoading && user && isActiveStatus && !canCreateEvent()) {
+      toast.error('No event credits left — save as Draft, or upgrade your plan to publish as Active');
     }
-  }, [mounted, planLoading, canCreateEvent, user]);
+  }, [mounted, planLoading, canCreateEvent, user, isActiveStatus]);
 
   useEffect(() => {
     if (formData.eventType === 'Wedding' && functions.length === 0) {
@@ -184,13 +188,17 @@ export default function CreateEventPage() {
       }
     }
 
-    if (!canCreateEvent()) {
-      toast.error('You have reached your event limit. Please upgrade your plan.');
+    const willConsumeCredit = PAID_STATUSES.includes(formData.status);
+
+    if (willConsumeCredit && !canCreateEvent()) {
+      toast.error('You have reached your event limit. Save as Draft, or upgrade your plan to go Active.');
       return;
     }
 
     setLoading(true);
-    const loadingToast = toast.loading('Creating event...');
+    const loadingToast = toast.loading(
+      willConsumeCredit ? 'Creating event...' : 'Saving draft...'
+    );
 
     try {
       let imageUrl = '';
@@ -209,7 +217,6 @@ export default function CreateEventPage() {
         }
       }
 
-      // 🔥🔥🔥 STORE FUNCTIONS AS ARRAY OF OBJECTS
       const functionsArray = formData.eventType === 'Wedding'
         ? functions.map(({ id, ...rest }) => rest)
         : [];
@@ -217,7 +224,7 @@ export default function CreateEventPage() {
       const eventData = {
         ...formData,
         imageUrl: imageUrl || formData.imageUrl || '',
-        status: 'active',
+        status: formData.status,
         createdAt: new Date().toISOString(),
         userId: user.id,
         userEmail: user.email,
@@ -225,24 +232,29 @@ export default function CreateEventPage() {
         functions: functionsArray,
       };
 
-      console.log('🔥🔥🔥 SAVING EVENT WITH FUNCTIONS:', JSON.stringify(eventData.functions, null, 2));
-
       const eventId = await createEvent(eventData);
       
       if (!eventId) {
         throw new Error('Failed to create event');
       }
       
-      await incrementEventCount();
-      await refreshPlan();
+      if (willConsumeCredit) {
+        await incrementEventCount();
+        await refreshPlan();
 
-      const remaining = remainingEvents() - 1;
-      toast.success(
-        remaining > 0 
-          ? `Event created successfully! ${remaining} events remaining`
-          : 'Event created successfully! You\'ve used all your events.',
-        { id: loadingToast, duration: 4000 }
-      );
+        const remaining = remainingEvents() - 1;
+        toast.success(
+          remaining > 0 
+            ? `Event created successfully! ${remaining} events remaining`
+            : 'Event created successfully! You\'ve used all your events.',
+          { id: loadingToast, duration: 4000 }
+        );
+      } else {
+        toast.success('Draft saved! It won\'t use a plan credit until you mark it Active.', {
+          id: loadingToast,
+          duration: 4000,
+        });
+      }
       
       router.push('/events');
       
@@ -257,7 +269,6 @@ export default function CreateEventPage() {
     }
   };
 
-  // Don't render until mounted
   if (!mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -266,7 +277,6 @@ export default function CreateEventPage() {
     );
   }
 
-  // Loading states
   if (authLoading || planLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -280,7 +290,6 @@ export default function CreateEventPage() {
     );
   }
 
-  // If no user (should not happen if AuthProvider works)
   if (!user) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -300,65 +309,11 @@ export default function CreateEventPage() {
     );
   }
 
-  if (!planLoading && user && !canCreateEvent()) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-8 max-w-lg w-full">
-            <div className="flex justify-center mb-4">
-              <div className="bg-yellow-100 dark:bg-yellow-800/30 p-3 rounded-full">
-                <AlertCircle className="h-12 w-12 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold mb-3 text-center text-gray-900 dark:text-gray-100">
-              Event Limit Reached
-            </h2>
-            <p className="text-gray-600 dark:text-gray-300 text-center mb-6">
-              You have used all your available events ({userPlan?.eventsCreated} of {userPlan?.maxEvents}). 
-              Purchase a new event credit or renew your plan to continue creating.
-            </p>
-            
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-6 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Events Created</span>
-                <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  {userPlan?.eventsCreated || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Total Events</span>
-                <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  {userPlan?.maxEvents || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-t border-gray-200 dark:border-gray-700 pt-3">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Plan Tier</span>
-                <span className="text-lg font-semibold capitalize text-blue-600 dark:text-blue-400">
-                  {userPlan?.tier || 'Free'}
-                </span>
-              </div>
-            </div>
+  // NOTE: there is NO `if (!canCreateEvent()) return <FullPageBlock />` here.
+  // That full-page gate is exactly what was breaking things — it hid the
+  // entire form (including Draft) once eventsCreated >= maxEvents. The limit
+  // is now enforced only inside handleSubmit, and only for Active status.
 
-            <Link href="/settings/billing">
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="lg">
-                <CreditCard className="mr-2 h-5 w-5" />
-                Purchase or Renew Plan
-              </Button>
-            </Link>
-            
-            <button
-              onClick={() => router.push('/events')}
-              className="mt-4 w-full text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
-            >
-              Return to Events
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main form
   return (
     <div className="max-w-4xl mx-auto pb-28 sm:pb-8 px-4 sm:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -379,7 +334,8 @@ export default function CreateEventPage() {
           {showPlanInfo && (
             <div className="mt-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm">
               <p className="text-blue-700 dark:text-blue-300">
-                Each event uses 1 credit from your plan. 
+                Draft events are free and don't use a credit. Publishing an
+                event as Active uses 1 credit from your plan.
                 You have {remainingEvents()} credits remaining.
               </p>
             </div>
@@ -395,6 +351,24 @@ export default function CreateEventPage() {
           Cancel
         </Button>
       </div>
+
+      {isActiveStatus && !canCreateEvent() && (
+        <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-yellow-800 dark:text-yellow-300">
+              You've used all your available events ({userPlan?.eventsCreated} of {userPlan?.maxEvents}).
+              Switch Status to Draft to save this for free, or purchase more credits to publish as Active.
+            </p>
+            <Link href="/settings/billing">
+              <Button size="sm" className="mt-3 bg-blue-600 hover:bg-blue-700 text-white">
+                <CreditCard className="mr-2 h-4 w-4" />
+                Purchase or Renew Plan
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
       
       <form onSubmit={handleSubmit} id="create-event-form">
         <Card>
@@ -436,6 +410,34 @@ export default function CreateEventPage() {
                   <option value="Workshop">Workshop</option>
                   <option value="Party">Party</option>
                 </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, status: 'draft' })}
+                  className={`flex-1 px-4 py-2.5 sm:py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    formData.status === 'draft'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  Draft <span className="block text-xs font-normal opacity-75">Free — no credit used</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, status: 'active' })}
+                  className={`flex-1 px-4 py-2.5 sm:py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    formData.status === 'active'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  Active <span className="block text-xs font-normal opacity-75">Uses 1 event credit</span>
+                </button>
               </div>
             </div>
 
@@ -517,7 +519,6 @@ export default function CreateEventPage() {
               />
             </div>
 
-            {/* 🔥 WEDDING FUNCTIONS SECTION */}
             {formData.eventType === 'Wedding' && (
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 sm:p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -712,16 +713,18 @@ export default function CreateEventPage() {
               </Button>
               <Button 
                 type="submit" 
-                disabled={loading || uploading || !canCreateEvent()}
+                disabled={loading || uploading || (isActiveStatus && !canCreateEvent())}
                 className="min-w-[140px]"
               >
                 {loading || uploading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {uploading ? `Uploading ${Math.round(progress)}%` : 'Creating...'}
+                    {uploading ? `Uploading ${Math.round(progress)}%` : (isActiveStatus ? 'Creating...' : 'Saving...')}
                   </>
-                ) : (
+                ) : isActiveStatus ? (
                   `Create Event (${remainingEvents()} left)`
+                ) : (
+                  'Save as Draft'
                 )}
               </Button>
             </div>
@@ -741,16 +744,18 @@ export default function CreateEventPage() {
         <button
           type="submit"
           form="create-event-form"
-          disabled={loading || uploading || !canCreateEvent()}
+          disabled={loading || uploading || (isActiveStatus && !canCreateEvent())}
           className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
         >
           {loading || uploading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              {uploading ? `${Math.round(progress)}%` : 'Creating...'}
+              {uploading ? `${Math.round(progress)}%` : 'Saving...'}
             </>
-          ) : (
+          ) : isActiveStatus ? (
             `Create (${remainingEvents()} left)`
+          ) : (
+            'Save as Draft'
           )}
         </button>
       </div>

@@ -5,7 +5,6 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Send, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useEvents } from '@/hooks/useFirebase';
-import { usePaymentPlans } from '@/hooks/usePaymentPlans';
 import toast from 'react-hot-toast';
 
 interface ChatMessage {
@@ -20,7 +19,9 @@ const GREETING =
 export default function AiCreateEventPage() {
   const router = useRouter();
   const { createEvent } = useEvents();
-  const { canCreateEvent, incrementEventCount, refreshPlan } = usePaymentPlans();
+  // 🔥 usePaymentPlans no longer needed here — AI-created events are always
+  // saved as Draft, which is free. Credit checks/increments only happen when
+  // an event is switched to Active (create/page.tsx or the edit page).
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 'greeting', role: 'assistant', text: GREETING },
@@ -38,10 +39,9 @@ export default function AiCreateEventPage() {
     const text = input.trim();
     if (!text || sending || created) return;
 
-    if (!canCreateEvent()) {
-      toast.error('You have reached your event limit. Please upgrade your plan.');
-      return;
-    }
+    // 🔥 REMOVED: the old `if (!canCreateEvent())` block here. The AI agent
+    // always creates a Draft, which never needs a plan credit, so this page
+    // should never stop someone from just talking to the agent.
 
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', text };
     const nextMessages = [...messages, userMsg];
@@ -88,12 +88,16 @@ export default function AiCreateEventPage() {
           googleMaps: '',
           imageUrl: '',
           functions: functionsArray,
+          // 🔥 Always created as Draft — free, no plan credit used. User can
+          // flip it to Active later (from the edit page) when they're ready,
+          // which is where the credit actually gets consumed.
+          status: 'draft',
         });
 
         if (!eventId) throw new Error('Failed to create event');
 
-        await incrementEventCount();
-        await refreshPlan();
+        // 🔥 REMOVED: incrementEventCount() + refreshPlan() — draft creation
+        // must not touch plan credits.
 
         setCreated({ eventName: eventData.eventName, eventDate: eventData.eventDate });
         setMessages((prev) => [
@@ -101,10 +105,10 @@ export default function AiCreateEventPage() {
           {
             id: `b-${Date.now()}`,
             role: 'assistant',
-            text: `Done! I've created "${eventData.eventName}". You can view and edit it from the Events page.`,
+            text: `Done! I've created "${eventData.eventName}" as a draft. Open it from the Events page and mark it Active whenever you're ready to publish.`,
           },
         ]);
-        toast.success('Event created!');
+        toast.success('Draft event created!');
       } else {
         setMessages((prev) => [
           ...prev,
@@ -135,7 +139,7 @@ export default function AiCreateEventPage() {
           Create Event with AI
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
-          Describe your event in your own words — I'll fill in the details and create it for you.
+          Describe your event in your own words — I'll fill in the details and create it for you as a draft.
         </p>
       </div>
 
