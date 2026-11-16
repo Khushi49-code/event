@@ -1,17 +1,20 @@
-// app/(auth)/login/page.tsx
+// 📁 FILE PATH: app/(auth)/login/page.tsx   (જૂની ફાઇલ પૂરી બદલો)
 "use client";
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { auth, db } from '../../../lib/config';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Loader2, Mail, Lock, Ban, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
 
 type BlockedState =
   | { type: 'deactivated' }
@@ -50,17 +53,56 @@ export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [blocked, setBlocked] = useState<BlockedState>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
+  const captchaUsedRef = useRef(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
 
+  // Robot check: વિગતો ભર્યા પછી, બટન દબાવો ત્યારે જ ચાલે છે
+  const runCaptcha = async (): Promise<string> => {
+    const widget = turnstileRef.current;
+    if (!widget) throw new Error('Robot check is not ready. Please refresh the page.');
+    try {
+      if (captchaUsedRef.current) widget.reset(); // token એક જ વાર વપરાય
+      captchaUsedRef.current = true;
+      widget.execute();
+      const token = await widget.getResponsePromise();
+      if (!token) throw new Error('no token');
+      return token;
+    } catch {
+      throw new Error('Robot check failed. Please try again.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setLoading(true);
     setBlocked(null);
 
     try {
+      // ---- Robot check (વિગતો ભર્યા પછી, Sign In દબાવો ત્યારે) ----
+      let captchaToken = '';
+      try {
+        captchaToken = await runCaptcha();
+      } catch (err: any) {
+        toast.error(err.message);
+        return;
+      }
+
+      const captchaRes = await fetch('/api/auth/verify-captcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+      if (!captchaRes.ok) {
+        const cd = await captchaRes.json().catch(() => ({}));
+        toast.error(cd.error || 'Robot check failed. Please try again.');
+        return;
+      }
+
       const userCredential = await signInWithEmailAndPassword(
         auth,
         formData.email.trim(),
@@ -258,6 +300,21 @@ export default function LoginPage() {
                 <Link href="/forgot-password" className="text-blue-600 hover:text-blue-700">
                   Forgot password?
                 </Link>
+              </div>
+
+              {/* Robot check: વિગતો ભર્યા પછી બટન દબાવો ત્યારે જ દેખાય અને ચાલે છે */}
+              <div className="flex justify-start">
+                {TURNSTILE_SITE_KEY ? (
+                  <Turnstile
+                    ref={turnstileRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    options={{ theme: 'auto', execution: 'execute', appearance: 'execute' }}
+                  />
+                ) : (
+                  <p className="text-xs text-red-500">
+                    NEXT_PUBLIC_TURNSTILE_SITE_KEY .env.local માં ખૂટે છે
+                  </p>
+                )}
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>

@@ -309,11 +309,6 @@ export default function CreateEventPage() {
     );
   }
 
-  // NOTE: there is NO `if (!canCreateEvent()) return <FullPageBlock />` here.
-  // That full-page gate is exactly what was breaking things — it hid the
-  // entire form (including Draft) once eventsCreated >= maxEvents. The limit
-  // is now enforced only inside handleSubmit, and only for Active status.
-
   return (
     <div className="max-w-4xl mx-auto pb-28 sm:pb-8 px-4 sm:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">

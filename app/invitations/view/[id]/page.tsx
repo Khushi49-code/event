@@ -19,6 +19,36 @@ interface FunctionGuestCount {
 
 const POPUP_RETRY_MS = 10000;
 
+// 🔥 Auth ready thay tyaa sudhi wait (max 8 sec). Fakt tyare j vapray je Firestore
+// "permission-denied" aape. Normal case ma card turant dekhay, koi wait nathi.
+const waitForAuth = () =>
+  new Promise<void>((resolve) => {
+    if (auth.currentUser) return resolve();
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        unsub();
+        resolve();
+      }
+    });
+    setTimeout(() => {
+      unsub();
+      resolve();
+    }, 8000);
+  });
+
+// getDoc je permission-denied par auth ready thay pachhi ek var retry kare
+const safeGetDoc = async (ref: any) => {
+  try {
+    return await getDoc(ref);
+  } catch (e: any) {
+    if (e?.code === 'permission-denied') {
+      await waitForAuth();
+      return await getDoc(ref);
+    }
+    throw e;
+  }
+};
+
 export default function InvitationViewPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -30,7 +60,6 @@ export default function InvitationViewPage() {
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
 
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>(null);
   // Used only when the event has a single function (no per-function picker)
@@ -46,66 +75,35 @@ export default function InvitationViewPage() {
   const [submitted, setSubmitted] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
-  // Which content the popup shows: the editable RSVP form, or (once
-  // submitted) the read-only "thank you" summary. The heart icon opens the
-  // summary after submitting; the pencil icon always opens the form.
   const [modalMode, setModalMode] = useState<'form' | 'summary'>('form');
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Anonymous Auth
+  // 🔥 Anonymous Auth — BACKGROUND ma thay che, card ne block nathi karto.
+  // Guest ne koi login/panel nathi dekhatu. onAuthStateChanged no first fire
+  // wait kare che jethi host ni restoring session hijack na thay.
   useEffect(() => {
-    // 🔥 FIX: The old code checked `auth.currentUser` synchronously and
-    // called signInAnonymously() immediately if it was null. But right
-    // after a page load, a *real* logged-in host session that's still
-    // being restored from persisted storage also shows `auth.currentUser`
-    // as null for a brief moment — so opening a guest RSVP link in the
-    // same browser the host is logged into could hijack that
-    // still-restoring session with a brand-new anonymous one, silently
-    // signing the host out (their plan/data then appear to vanish, and
-    // any of their other open tabs relying on that session break too).
-    // Waiting for onAuthStateChanged's first fire — instead of checking
-    // currentUser synchronously — guarantees we only decide to sign in
-    // anonymously once Firebase has actually finished resolving whatever
-    // session (real or none) already existed, so we never race a
-    // restoring host session.
     let signingIn = false;
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        // Either a real (host) session finished restoring, or we already
-        // have an anonymous user from a previous visit — either way,
-        // don't touch it.
-        setAuthLoading(false);
-        return;
-      }
+      if (user) return;
 
-      // Firebase has finished checking and there's genuinely no user at
-      // all — safe to sign in anonymously now.
       if (!signingIn) {
         signingIn = true;
-        signInAnonymously(auth)
-          .catch((err) => {
-            console.error('Error with anonymous auth:', err);
-          })
-          .finally(() => {
-            setAuthLoading(false);
-          });
+        signInAnonymously(auth).catch((err) => {
+          console.error('Error with anonymous auth:', err);
+        });
       }
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Fetch Guest RSVP
+  // Fetch Guest RSVP (previous response hoy to). Link ma rsvpId na hoy to pan card dekhase.
   useEffect(() => {
     const fetchGuestRSVP = async () => {
-      if (!rsvpId) {
-        setError('Invalid RSVP link. Please contact the host.');
-        setLoading(false);
-        return;
-      }
+      if (!rsvpId) return;
       try {
-        const rsvpSnap = await getDoc(doc(db, 'guests', rsvpId));
+        const rsvpSnap = await safeGetDoc(doc(db, 'guests', rsvpId));
         if (rsvpSnap.exists()) {
           const data = rsvpSnap.data();
           if (data.status === 'Confirmed' || data.status === 'Declined') {
@@ -140,45 +138,36 @@ export default function InvitationViewPage() {
         return;
       }
       try {
-        const snap = await getDoc(doc(db, 'invitations', invitationId));
+        const snap = await safeGetDoc(doc(db, 'invitations', invitationId));
         if (!snap.exists()) {
           setError('This invitation could not be found.');
           setLoading(false);
           return;
         }
         const invitationData = snap.data();
-        
-        // ✅ If invitation doesn't have allFunctions, try to fetch from event
+
         let allFunctions = invitationData?.content?.allFunctions || [];
-        
-        if (invitationData?.eventId && (!allFunctions || allFunctions.length === 0)) {
-          try {
-            const eventSnap = await getDoc(doc(db, 'events', invitationData.eventId));
-            if (eventSnap.exists()) {
-              const eventData = eventSnap.data();
-              allFunctions = eventData.functions || [];
-              console.log('✅✅✅ Functions fetched from event:', allFunctions);
-              
-              // Update invitation content with functions from event
-              if (invitationData.content) {
-                invitationData.content.allFunctions = allFunctions;
-              }
-            }
-          } catch (evErr) {
-            console.error('Error loading event functions:', evErr);
-          }
-        }
-        
-        setInvitation(invitationData);
+        let eventData: any = null;
 
         if (invitationData?.eventId) {
           try {
-            const eventSnap = await getDoc(doc(db, 'events', invitationData.eventId));
-            if (eventSnap.exists()) setEvent(eventSnap.data());
+            const eventSnap = await safeGetDoc(doc(db, 'events', invitationData.eventId));
+            if (eventSnap.exists()) {
+              eventData = eventSnap.data();
+              if (!allFunctions || allFunctions.length === 0) {
+                allFunctions = eventData.functions || [];
+                if (invitationData.content) {
+                  invitationData.content.allFunctions = allFunctions;
+                }
+              }
+            }
           } catch (evErr) {
             console.error('Error loading event:', evErr);
           }
         }
+
+        setInvitation(invitationData);
+        if (eventData) setEvent(eventData);
       } catch (err) {
         console.error('Error loading invitation:', err);
         setError('Something went wrong loading this invitation.');
@@ -189,18 +178,19 @@ export default function InvitationViewPage() {
     fetchInvitation();
   }, [invitationId]);
 
-  // Popup scheduling
+  // Popup scheduling — card pehla dekhay, 10 sec pachhi RSVP popup (fakt jo rsvpId hoy)
   useEffect(() => {
-    if (loading || authLoading || error || !invitation || submitted) return;
+    if (loading || error || !invitation || submitted || !rsvpId) return;
 
     retryTimerRef.current = setTimeout(() => {
+      setModalMode('form');
       setShowModal(true);
     }, POPUP_RETRY_MS);
 
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
-  }, [loading, authLoading, error, invitation, submitted, showModal]);
+  }, [loading, error, invitation, submitted, showModal, rsvpId]);
 
   const handleCloseModal = () => {
     setShowModal(false);
@@ -209,9 +199,6 @@ export default function InvitationViewPage() {
   const getFunctionName = (fn: any, idx: number) =>
     fn?.name || fn?.functionName || fn?.title || `Function ${idx + 1}`;
 
-  // Toggling a function on seeds a default headcount (1 adult, 0 children)
-  // for it; toggling off just removes it from the selected list (we keep
-  // the count around in state in case they re-select it).
   const toggleFunction = (name: string) => {
     const isSelected = selectedFunctions.includes(name);
     if (isSelected) {
@@ -269,7 +256,6 @@ export default function InvitationViewPage() {
 
       if (rsvpStatus === 'accepted') {
         if (showFunctionPicker) {
-          // Sum per-function counts for the functions the guest picked
           functionGuestsToSave = {};
           for (const name of selectedFunctions) {
             const c = functionCounts[name] || { adults: 1, children: 0 };
@@ -280,8 +266,6 @@ export default function InvitationViewPage() {
         } else {
           adultsToSave = adultsCount;
           childrenToSave = childrenCount;
-          // Single-function events still get a functionGuests entry so the
-          // host's per-function breakdown stays consistent.
           const singleFunctionName =
             allFunctionsList.length === 1 ? getFunctionName(allFunctionsList[0], 0) : null;
           if (singleFunctionName) {
@@ -318,7 +302,8 @@ export default function InvitationViewPage() {
     }
   };
 
-  if (loading || authLoading) {
+  // 🔥 Fakt invitation load thay tyaa sudhi spinner. Auth/login par koi wait nathi.
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FBF8F3]">
         <Loader2 className="h-8 w-8 animate-spin text-[#7B1E3A]" />
@@ -339,7 +324,6 @@ export default function InvitationViewPage() {
 
   const { template, colors, fonts, content, images, selectedFunction } = invitation;
 
-  // ✅ 🔥 CRITICAL: Create invitationContent with allFunctions
   const invitationContent = {
     ...content,
     allFunctions: content?.allFunctions || [],
@@ -351,8 +335,6 @@ export default function InvitationViewPage() {
   const isAllFunctionsSelected =
     functionNames.length > 0 && functionNames.every((n: string) => selectedFunctions.includes(n));
 
-  // Running totals across the functions the guest has currently selected —
-  // shown so they can see the combined headcount as they fill each one in.
   const selectedFunctionTotals = selectedFunctions.reduce(
     (acc, name) => {
       const c = functionCounts[name] || { adults: 1, children: 0 };
@@ -487,8 +469,6 @@ export default function InvitationViewPage() {
                 })}
               </div>
 
-              {/* Per-function headcount — one Adults/Children stepper per
-                  function the guest selected above. */}
               {selectedFunctions.length > 0 && (
                 <div className="mt-3 space-y-3">
                   {selectedFunctions.map((name) => {
@@ -556,8 +536,6 @@ export default function InvitationViewPage() {
             </div>
           )}
 
-          {/* Single overall counter — only shown when there's no function
-              picker (0 or 1 function on the event). */}
           {!showFunctionPicker && (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -655,7 +633,6 @@ export default function InvitationViewPage() {
 
   return (
     <div className="min-h-screen py-10 px-4 flex flex-col items-center bg-[#FBF8F3] gap-6">
-      {/* ✅ 🔥 Pass invitationContent with allFunctions */}
       <InvitationCard
         template={template || 'custom'}
         colors={colors}
@@ -667,41 +644,41 @@ export default function InvitationViewPage() {
         selectedFunction={selectedFunction}
       />
 
-      {/* Floating side button(s) — icon only, fixed bottom-right on all
-          screens. Before submitting: just the RSVP heart. After submitting:
-          both heart and the update pencil, stacked. */}
-      <div className="fixed right-4 bottom-4 z-40 flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setModalMode(submitted ? 'summary' : 'form');
-            setShowModal(true);
-          }}
-          aria-label={submitted ? 'View response' : 'RSVP'}
-          title={submitted ? 'View response' : 'RSVP'}
-          className="flex items-center justify-center rounded-full bg-[#7B1E3A] text-white w-12 h-12 shadow-lg hover:bg-[#5A1529] transition-colors"
-        >
-          <Heart className="h-5 w-5" fill="white" />
-        </button>
-        {submitted && (
+      {/* RSVP buttons — fakt jyare link ma rsvpId hoy */}
+      {rsvpId && (
+        <div className="fixed right-4 bottom-4 z-40 flex flex-col gap-2">
           <button
             type="button"
             onClick={() => {
-              setModalMode('form');
+              setModalMode(submitted ? 'summary' : 'form');
               setShowModal(true);
             }}
-            aria-label="Update response"
-            title="Update response"
-            className="flex items-center justify-center rounded-full bg-[#C6A05C] text-white w-12 h-12 shadow-lg hover:bg-[#B08F4A] transition-colors"
+            aria-label={submitted ? 'View response' : 'RSVP'}
+            title={submitted ? 'View response' : 'RSVP'}
+            className="flex items-center justify-center rounded-full bg-[#7B1E3A] text-white w-12 h-12 shadow-lg hover:bg-[#5A1529] transition-colors"
           >
-            <Pencil className="h-5 w-5" />
+            <Heart className="h-5 w-5" fill="white" />
           </button>
-        )}
-      </div>
+          {submitted && (
+            <button
+              type="button"
+              onClick={() => {
+                setModalMode('form');
+                setShowModal(true);
+              }}
+              aria-label="Update response"
+              title="Update response"
+              className="flex items-center justify-center rounded-full bg-[#C6A05C] text-white w-12 h-12 shadow-lg hover:bg-[#B08F4A] transition-colors"
+            >
+              <Pencil className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="relative w-full max-w-md bg-[#FFFDFA] rounded-2xl shadow-xl border border-[#E8DCC8] overflow-hidden">
+          <div className="relative w-full max-w-md bg-[#FFFDFA] rounded-2xl shadow-xl border border-[#E8DCC8] overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="h-1 bg-gradient-to-r from-[#7B1E3A] via-[#C6A05C] to-[#7B1E3A]" />
             <button
               type="button"

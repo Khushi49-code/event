@@ -9,6 +9,7 @@ import { Plus, Edit, Trash2, Eye, Search, Loader2, RefreshCw, Calendar, MapPin, 
 import Link from 'next/link';
 import { useEvents, EventDoc } from '@/hooks/useFirebase';
 import { usePaymentPlans } from '@/hooks/usePaymentPlans';
+import { getCreditsForGuests } from '@/lib/guestCredits';
 import toast from 'react-hot-toast';
 
 export default function EventsPage() {
@@ -18,22 +19,27 @@ export default function EventsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const { events, loading, error, deleteEvent, updateEvent, refreshEvents } = useEvents();
-  const { canCreateEvent, incrementEventCount, forfeitCredit, refreshPlan } = usePaymentPlans();
+  // 🔥 Navi functions: remainingCredits, consumeCredits(n), forfeitCredits(n)
+  const { remainingCredits, consumeCredits, forfeitCredits, refreshPlan } = usePaymentPlans();
 
-  // 🔥 Delete now acts as "Cancel" for Active events:
-  // - Active + invitation never shared/downloaded -> free cancel, credit
-  //   comes back automatically (live active-count just drops by 1).
-  // - Active + invitation WAS shared/downloaded -> credit is permanently
-  //   forfeited (forfeitCredit()) before the event is removed, so it never
-  //   comes back even though the event itself is gone.
-  // - Draft events -> always free, no credit impact either way.
+  // 🔥 Event ne ketla credit joie (guest count pramane)
+  const getRequiredCredits = (event: EventDoc) =>
+    getCreditsForGuests((event as any).guestCount || 0);
+
+  // 🔥 Delete acts as "Cancel" for Active events:
+  // - Active + invitation never shared/downloaded -> free cancel, credits
+  //   come back automatically (event ni creditsUsed active total mathi ghati jay).
+  // - Active + invitation WAS shared/downloaded -> event ni badhi creditsUsed
+  //   forfeit thay (forfeitCredits(creditsUsed)) pachhi event delete thay.
+  // - Draft events -> always free.
   const handleDelete = async (event: EventDoc) => {
     const { id, eventName, status, invitationSharedAt, invitationDownloadedAt } = event;
     const isActive = status?.toLowerCase() === 'active';
     const wasDistributed = isActive && !!(invitationSharedAt || invitationDownloadedAt);
+    const creditsUsed: number = (event as any).creditsUsed || 1;
 
     const confirmMsg = wasDistributed
-      ? `"${eventName}"'s invitation has already been shared/downloaded. Cancelling it will NOT refund the event credit. Continue?`
+      ? `"${eventName}"'s invitation has already been shared/downloaded. Cancelling it will NOT refund the ${creditsUsed} event credit(s). Continue?`
       : `Are you sure you want to delete "${eventName}"?`;
 
     if (!confirm(confirmMsg)) {
@@ -47,16 +53,16 @@ export default function EventsPage() {
 
     try {
       if (wasDistributed) {
-        await forfeitCredit();
+        await forfeitCredits(creditsUsed);
       }
 
       await deleteEvent(id);
 
       toast.success(
         wasDistributed
-          ? `"${eventName}" cancelled. Credit was not refunded — invitation was already shared/downloaded.`
+          ? `"${eventName}" cancelled. ${creditsUsed} credit(s) not refunded — invitation was already shared/downloaded.`
           : isActive
-          ? `"${eventName}" deleted — credit refunded.`
+          ? `"${eventName}" deleted — ${creditsUsed} credit(s) refunded.`
           : `"${eventName}" deleted successfully!`,
         { id: loadingToast, duration: 4000 }
       );
@@ -74,12 +80,24 @@ export default function EventsPage() {
     }
   };
 
-  const handleToggleStatus = async (id: string, eventName: string, currentStatus?: string) => {
+  const handleToggleStatus = async (event: EventDoc) => {
+    const { id, eventName, status: currentStatus } = event;
     const isCurrentlyActive = currentStatus?.toLowerCase() === 'active';
+    const required = getRequiredCredits(event);
 
-    if (!isCurrentlyActive && !canCreateEvent()) {
-      toast.error('No event credits left. Upgrade your plan to activate this event.');
+    if (!isCurrentlyActive && remainingCredits < required) {
+      toast.error(
+        `"${eventName}" activate karva ${required} credit(s) joie. Tamari pase ${remainingCredits} che. Upgrade your plan.`,
+        { duration: 5000 }
+      );
       return;
+    }
+
+    if (!isCurrentlyActive && required > 1) {
+      const guestCount = (event as any).guestCount || 0;
+      if (!confirm(`"${eventName}" ma ${guestCount} guests che, etle ${required} credits cut thase. Continue?`)) {
+        return;
+      }
     }
 
     setTogglingId(id);
@@ -88,17 +106,20 @@ export default function EventsPage() {
     );
 
     try {
-      const newStatus = isCurrentlyActive ? 'draft' : 'active';
-      await updateEvent(id, { status: newStatus });
-
-      if (newStatus === 'active') {
-        await incrementEventCount();
-        await refreshPlan();
+      if (isCurrentlyActive) {
+        // Draft ma jay tyare credit free thay jay (active total mathi ghati jay)
+        await updateEvent(id, { status: 'draft', creditsUsed: 0 } as any);
+      } else {
+        await updateEvent(id, { status: 'active', creditsUsed: required } as any);
+        await consumeCredits(required);
       }
 
+      await refreshPlan();
       await refreshEvents();
       toast.success(
-        newStatus === 'active' ? `"${eventName}" is now Active` : `"${eventName}" moved to Draft`,
+        !isCurrentlyActive
+          ? `"${eventName}" is now Active (${required} credit${required > 1 ? 's' : ''} used)`
+          : `"${eventName}" moved to Draft`,
         { id: loadingToast, duration: 3000 }
       );
     } catch (error: any) {
@@ -170,13 +191,18 @@ export default function EventsPage() {
   const StatusToggle = ({ event }: { event: EventDoc }) => {
     const isActive = event.status?.toLowerCase() === 'active';
     const isBusy = togglingId === event.id;
+    const required = getRequiredCredits(event);
 
     return (
       <button
         type="button"
-        onClick={() => handleToggleStatus(event.id, event.eventName, event.status)}
+        onClick={() => handleToggleStatus(event)}
         disabled={isBusy}
-        title={isActive ? 'Active — click to move to Draft' : 'Draft — click to Activate'}
+        title={
+          isActive
+            ? 'Active — click to move to Draft'
+            : `Draft — click to Activate (${required} credit${required > 1 ? 's' : ''})`
+        }
         className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${getStatusColor(event.status || 'draft')}`}
       >
         {isBusy ? (
@@ -199,6 +225,25 @@ export default function EventsPage() {
     );
   };
 
+  // 🔥 Guest count + credit info badge
+  const CreditBadge = ({ event }: { event: EventDoc }) => {
+    const isActive = event.status?.toLowerCase() === 'active';
+    const guestCount = (event as any).guestCount || 0;
+    const credits = isActive ? (event as any).creditsUsed || 1 : getRequiredCredits(event);
+    return (
+      <span
+        title={
+          isActive
+            ? `${guestCount} guests • ${credits} credit(s) used`
+            : `${guestCount} guests • activate karva ${credits} credit(s) joie`
+        }
+        className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium whitespace-nowrap"
+      >
+        {guestCount} guests • {credits} cr
+      </span>
+    );
+  };
+
   // 🔥 Small indicator so it's visible at a glance which active events would
   // NOT get a refund if cancelled.
   const DistributedBadge = ({ event }: { event: EventDoc }) => {
@@ -207,7 +252,7 @@ export default function EventsPage() {
     if (!wasDistributed) return null;
     return (
       <span
-        title="Invitation already shared/downloaded — cancelling won't refund the credit"
+        title="Invitation already shared/downloaded — cancelling won't refund the credit(s)"
         className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium"
       >
         No refund
@@ -337,6 +382,7 @@ export default function EventsPage() {
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <StatusToggle event={event} />
+                            <CreditBadge event={event} />
                             <DistributedBadge event={event} />
                           </div>
                         </div>
@@ -428,8 +474,9 @@ export default function EventsPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <StatusToggle event={event} />
+                                <CreditBadge event={event} />
                                 <DistributedBadge event={event} />
                               </div>
                             </TableCell>

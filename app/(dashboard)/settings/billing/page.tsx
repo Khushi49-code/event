@@ -2,18 +2,18 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Script from 'next/script';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanExpiry } from '@/hooks/usePlanExpiry';
 import { usePaymentPlans } from '@/hooks/usePaymentPlans';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/config';
 import toast from 'react-hot-toast';
-import { Check, CreditCard, Crown, IndianRupee, Loader2, Mail, Minus, Plus, Sparkles, Zap } from 'lucide-react';
+import { Check, CreditCard, Crown, Loader2, Mail, Minus, Plus, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { PRICE_PER_CREDIT, MIN_QTY, MAX_QTY, formatPrice } from '@/lib/pricing';
 
 interface Plan {
   id: string;
@@ -30,23 +30,20 @@ interface Plan {
   eventCredits?: number;
 }
 
-// Price per single event credit — used both for purchases and for
-// estimating total amount paid on the credits summary below.
-const PRICE_PER_CREDIT = 100;
-
 const PLANS: Plan[] = [
   {
     id: 'pro',
     name: 'Pro',
     price: PRICE_PER_CREDIT,
     durationDays: 365,
-    durationLabel: 'Per Event / Year',
-    description: 'Pay per event with full features',
+    durationLabel: 'Per Credit / Year',
+    description: 'Pay per event credit with full features',
     pricePerEvent: true,
     eventCredits: 1,
     features: [
       'Full event management',
-      'Unlimited guests per event',
+      'Up to 100 guests per event = 1 credit',
+      '101–200 guests = 2 credits, 201–500 guests = 3 credits',
       'WhatsApp automation',
       'RSVP management',
       'Accommodation management',
@@ -77,14 +74,14 @@ export default function BillingPage() {
   const router = useRouter();
   const { user, loading: authLoading, firebaseUser } = useAuth();
   const { planName, daysLeft, status: planStatus, loading: planLoading } = usePlanExpiry();
-  const { userPlan, purchaseEvents, remainingEvents, refreshPlan: refreshPaymentPlan } = usePaymentPlans();
+  const { userPlan, remainingEvents, refreshPlan: refreshPaymentPlan } = usePaymentPlans();
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const getQuantity = (planId: string) => quantities[planId] ?? 1;
   const setQuantity = (planId: string, qty: number) => {
-    const clamped = Math.max(1, Math.min(999, qty || 1));
+    const clamped = Math.max(MIN_QTY, Math.min(MAX_QTY, qty || MIN_QTY));
     setQuantities((prev) => ({ ...prev, [planId]: clamped }));
   };
 
@@ -98,6 +95,7 @@ export default function BillingPage() {
     }
   }, [mounted, authLoading, user, firebaseUser, router]);
 
+  // Credits are added by the SERVER only after Razorpay confirms the payment.
   const handleSelectPlan = async (plan: Plan) => {
     if (plan.isCustom) {
       window.location.href = 'mailto:sales@eventflux.com?subject=Custom Plan Enquiry';
@@ -105,54 +103,97 @@ export default function BillingPage() {
     }
 
     const uid = user?.id || firebaseUser?.uid;
-
-    if (!uid) {
+    if (!uid || !firebaseUser) {
       toast.error('Please sign in first');
       router.push('/auth/signin');
       return;
     }
 
-    if (!plan.durationDays) {
-      toast.error('Invalid plan configuration');
+    if (typeof window === 'undefined' || !(window as any).Razorpay) {
+      toast.error('Payment system is still loading. Please try again in a moment.');
       return;
     }
 
     const qty = plan.pricePerEvent ? getQuantity(plan.id) : 1;
-
     setProcessingPlanId(plan.id);
+
     try {
-      const now = new Date();
-      const isSamePlanActive = planName === plan.name && planStatus !== 'expired' && planStatus !== 'none';
+      const idToken = await firebaseUser.getIdToken();
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      };
 
-      let baseDate = now;
-      if (isSamePlanActive && daysLeft && daysLeft > 0) {
-        baseDate = new Date(now.getTime() + daysLeft * 24 * 60 * 60 * 1000);
-      }
+      // 1) Create order on the server (amount is calculated there)
+      const res = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ quantity: qty }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
-      const newExpiry = new Date(baseDate.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+      // 2) Open Razorpay Checkout (currency server na order mathi aave che: USD)
+      const rzp = new (window as any).Razorpay({
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: data.amount,
+        currency: data.currency,
+        order_id: data.orderId,
+        name: 'EventFlux',
+        description: `${qty} event credit${qty > 1 ? 's' : ''}`,
+        prefill: { email: user?.email || firebaseUser?.email || '' },
+        theme: { color: '#2563eb' },
+        handler: async (response: any) => {
+          try {
+            // 3) Server verifies signature + adds credits
+            const freshToken = await firebaseUser.getIdToken();
+            const v = await fetch('/api/razorpay/verify', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${freshToken}`,
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const vd = await v.json();
+            if (!v.ok) throw new Error(vd.error || 'Verification failed');
 
-      await setDoc(
-        doc(db, 'users', uid),
-        {
-          planName: plan.name,
-          planId: plan.id,
-          planExpiryDate: Timestamp.fromDate(newExpiry),
-          planUpdatedAt: Timestamp.now(),
+            await refreshPaymentPlan();
+
+            if (vd.pending) {
+              toast.success('Payment received! Credits will appear in a moment.');
+            } else {
+              toast.success(`Payment successful! ${qty} credit${qty > 1 ? 's' : ''} added.`);
+            }
+            router.refresh();
+          } catch (err: any) {
+            console.error('Verify error:', err);
+            toast.error(
+              'Payment received but confirmation is pending. Credits will appear shortly — contact support if not.'
+            );
+          } finally {
+            setProcessingPlanId(null);
+          }
         },
-        { merge: true }
-      );
+        modal: {
+          ondismiss: () => setProcessingPlanId(null),
+        },
+      });
 
-      if (plan.pricePerEvent && plan.eventCredits) {
-        await purchaseEvents(plan.eventCredits * qty);
-      }
-      await refreshPaymentPlan();
+      rzp.on('payment.failed', (resp: any) => {
+        console.error('Payment failed:', resp?.error);
+        toast.error(resp?.error?.description || 'Payment failed. Please try again.');
+        setProcessingPlanId(null);
+      });
 
-      toast.success(`${plan.name} plan activated!`);
-      router.refresh();
+      rzp.open();
     } catch (error: any) {
-      console.error('Error updating plan:', error);
-      toast.error(error.message || 'Failed to update plan. Please try again.');
-    } finally {
+      console.error('Payment error:', error);
+      toast.error(error.message || 'Something went wrong');
       setProcessingPlanId(null);
     }
   };
@@ -182,24 +223,21 @@ export default function BillingPage() {
     );
   }
 
-  // 🔥 NEW: credits summary numbers.
-  // - totalPurchased: total event credits ever bought (maxEvents).
-  // - totalPaid: estimated total money paid, at $100/credit.
-  // - active: credits currently in use (Active events, live-counted).
-  // - forfeited: credits permanently burned (cancelled after invitation was shared/downloaded).
-  // - remaining: credits still available to activate a new event.
+  // Credits summary numbers
   const totalPurchased = userPlan?.maxEvents || 0;
   const totalPaid = totalPurchased * PRICE_PER_CREDIT;
-  const activeUsed = userPlan?.eventsCreated || 0; // now mirrors live active-event count
+  const activeUsed = userPlan?.eventsCreated || 0;
   const forfeited = userPlan?.forfeitedCredits || 0;
   const remaining = remainingEvents();
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Choose Your Plan</h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Simple pricing — pay per event or get a custom plan
+          Simple pricing — pay per credit or get a custom plan
         </p>
 
         {planName && (
@@ -214,7 +252,7 @@ export default function BillingPage() {
         )}
       </div>
 
-      {/* 🔥 NEW: Your Credits summary */}
+      {/* Your Credits summary */}
       <Card className="max-w-4xl mx-auto mb-10">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -227,8 +265,8 @@ export default function BillingPage() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div className="text-center">
               <p className="text-xs text-gray-500 mb-1">Total Paid</p>
-              <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center justify-center gap-0.5">
-                <IndianRupee className="h-4 w-4 hidden" />${totalPaid}
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+                {formatPrice(totalPaid)}
               </p>
             </div>
             <div className="text-center">
@@ -321,12 +359,14 @@ export default function BillingPage() {
                     ) : plan.pricePerEvent ? (
                       <div>
                         <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                          ${totalPrice}
+                          {totalPrice !== null && totalPrice !== undefined ? formatPrice(totalPrice) : ''}
                         </span>
                         <span className="text-sm text-gray-500 ml-2">
-                          {qty > 1 ? `for ${qty} events` : '/ event'}
+                          {qty > 1 ? `for ${qty} credits` : '/ credit'}
                         </span>
-                        <p className="text-xs text-gray-400 mt-1">Billed annually · ${plan.price}/event</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Billed annually · {plan.price !== null ? formatPrice(plan.price) : ''}/credit
+                        </p>
                       </div>
                     ) : (
                       <span className="text-3xl font-bold text-gray-900 dark:text-white">Free</span>
@@ -336,20 +376,21 @@ export default function BillingPage() {
                   {plan.pricePerEvent && (
                     <div className="mb-6">
                       <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                        Number of events
+                        Number of credits
                       </label>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setQuantity(plan.id, qty - 1)}
-                          disabled={isProcessing || qty <= 1}
+                          disabled={isProcessing || qty <= MIN_QTY}
                           className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
                         >
                           <Minus className="h-4 w-4" />
                         </button>
                         <input
                           type="number"
-                          min={1}
+                          min={MIN_QTY}
+                          max={MAX_QTY}
                           value={qty}
                           onChange={(e) => setQuantity(plan.id, parseInt(e.target.value, 10))}
                           disabled={isProcessing}
@@ -358,7 +399,7 @@ export default function BillingPage() {
                         <button
                           type="button"
                           onClick={() => setQuantity(plan.id, qty + 1)}
-                          disabled={isProcessing}
+                          disabled={isProcessing || qty >= MAX_QTY}
                           className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
                         >
                           <Plus className="h-4 w-4" />
@@ -378,7 +419,7 @@ export default function BillingPage() {
 
                   <Button
                     className="w-full"
-                    variant={isCurrentPlan ? 'default' : plan.isCustom ? 'outline' : 'default'}
+                    variant={plan.isCustom ? 'outline' : 'default'}
                     disabled={isProcessing}
                     onClick={() => handleSelectPlan(plan)}
                   >
@@ -393,7 +434,9 @@ export default function BillingPage() {
                         Contact Sales
                       </>
                     ) : plan.pricePerEvent ? (
-                      qty > 1 ? `Buy ${qty} Events — $${totalPrice}` : 'Select Plan'
+                      qty > 1
+                        ? `Pay ${formatPrice(totalPrice || 0)} — Buy ${qty} Credits`
+                        : `Pay ${formatPrice(totalPrice || 0)}`
                     ) : isCurrentPlan ? (
                       'Renew Plan'
                     ) : (
@@ -403,7 +446,7 @@ export default function BillingPage() {
 
                   {plan.pricePerEvent && (
                     <p className="text-xs text-center text-gray-400 mt-3">
-                      Pay only for events you activate
+                      Pay only for credits you use · Secured by Razorpay
                     </p>
                   )}
                 </CardContent>
@@ -419,7 +462,7 @@ export default function BillingPage() {
             💡 All plans include: WhatsApp automation, RSVP management, Guest management
           </span>
         </div>
-      </div>     
+      </div>
     </div>
   );
 }

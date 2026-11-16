@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { useEvents, useGuests } from '@/hooks/useFirebase';
+import { usePaymentPlans } from '@/hooks/usePaymentPlans';
 import { guestServices } from '@/lib/services';
+import { getCreditsForGuests, MAX_GUESTS_PER_EVENT } from '@/lib/guestCredits';
 import { 
   Loader2, 
   UserPlus, 
@@ -30,8 +32,9 @@ import * as XLSX from 'xlsx';
 
 export default function GuestsPage() {
   const [selectedEvent, setSelectedEvent] = useState('');
-  const { events, loading: eventsLoading } = useEvents();
+  const { events, loading: eventsLoading, updateEvent } = useEvents();
   const { guests, loading: guestsLoading, fetchGuests } = useGuests(selectedEvent);
+  const { remainingCredits, consumeCredits, refreshPlan } = usePaymentPlans();
 
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -50,8 +53,64 @@ export default function GuestsPage() {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 🔥 Selected event + credit info
+  const selectedEventDoc: any = events.find((e: any) => e.id === selectedEvent);
+  const isEventActive = selectedEventDoc?.status?.toLowerCase() === 'active';
+  // Event ketla credit already use kari chukyo che (old events ma field na hoy to 1 gano)
+  const alreadyPaidCredits: number = selectedEventDoc?.creditsUsed || 1;
+
   const resetForm = () => {
     setForm({ name: '', email: '', phone: '', guests: '', adults: '', children: '' });
+  };
+
+  // 🔥 STEP 1: Guest add karta pehla check (credit chhe ke nahi, limit cross thay che ke nahi)
+  // Return: { ok, extra, required }
+  const checkTierIncrease = (newTotal: number) => {
+    if (newTotal > MAX_GUESTS_PER_EVENT) {
+      toast.error(`Maximum ${MAX_GUESTS_PER_EVENT} guests per event allowed. Tame ${newTotal} guests add kari rahya chho.`);
+      return { ok: false, extra: 0, required: 0 };
+    }
+
+    // Draft event ma charge nathi — activate thay tyare katse
+    if (!isEventActive) return { ok: true, extra: 0, required: 0 };
+
+    const required = getCreditsForGuests(newTotal);
+    const extra = required - alreadyPaidCredits;
+
+    if (extra <= 0) return { ok: true, extra: 0, required };
+
+    if (remainingCredits < extra) {
+      toast.error(
+        `${newTotal} guests mate ${required} credits joie. Tamari pase ${extra} extra credit nathi. Plan upgrade karo.`,
+        { duration: 5000 }
+      );
+      return { ok: false, extra, required };
+    }
+
+    if (!confirm(`${newTotal} guests thata ${extra} extra event credit cut thase. Continue?`)) {
+      return { ok: false, extra, required };
+    }
+
+    return { ok: true, extra, required };
+  };
+
+  // 🔥 STEP 2: Guest successfully add thaya pachhi credit kapo + guestCount save karo
+  const applyTierIncrease = async (finalTotal: number) => {
+    if (!selectedEvent) return;
+
+    const payload: any = { guestCount: finalTotal };
+
+    if (isEventActive) {
+      const required = getCreditsForGuests(finalTotal);
+      const extra = required - alreadyPaidCredits;
+      if (extra > 0) {
+        await consumeCredits(extra);
+        payload.creditsUsed = required;
+      }
+    }
+
+    await updateEvent(selectedEvent, payload);
+    await refreshPlan();
   };
 
   const handleAddGuest = async () => {
@@ -68,6 +127,10 @@ export default function GuestsPage() {
       return;
     }
 
+    const newTotal = guests.length + 1;
+    const check = checkTierIncrease(newTotal);
+    if (!check.ok) return;
+
     setSaving(true);
     try {
       await guestServices.addGuest({
@@ -80,7 +143,14 @@ export default function GuestsPage() {
         children: form.children === '' ? 0 : Number(form.children),
         status: 'Pending',
       });
-      toast.success('Guest added successfully!');
+
+      await applyTierIncrease(newTotal);
+
+      toast.success(
+        check.extra > 0
+          ? `Guest added! ${check.extra} extra credit cut thayu.`
+          : 'Guest added successfully!'
+      );
       resetForm();
       setShowForm(false);
       fetchGuests();
@@ -96,6 +166,12 @@ export default function GuestsPage() {
     if (!confirm(`Remove ${name || 'this guest'}?`)) return;
     try {
       await guestServices.deleteGuest(id);
+
+      // guestCount update (credit refund nathi — creditsUsed ma change nathi)
+      if (selectedEvent) {
+        await updateEvent(selectedEvent, { guestCount: Math.max(0, guests.length - 1) } as any);
+      }
+
       toast.success('Guest removed');
       fetchGuests();
     } catch (error: any) {
@@ -238,9 +314,19 @@ export default function GuestsPage() {
         return;
       }
 
+      // 🔥 Limit + credit check (import karta pehla)
+      const projectedTotal = guests.length + validGuests.length;
+      const check = checkTierIncrease(projectedTotal);
+      if (!check.ok) {
+        toast.dismiss(loadingToast);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
       // Confirm import
       if (!confirm(`Import ${validGuests.length} guest(s)? ${invalidRows.length > 0 ? `(${invalidRows.length} invalid rows will be skipped)` : ''}`)) {
         toast.dismiss(loadingToast);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
@@ -273,10 +359,24 @@ export default function GuestsPage() {
 
       // Show results
       if (successCount > 0) {
-        toast.success(`Successfully imported ${successCount} guest(s)! ${errorCount > 0 ? `Failed: ${errorCount}` : ''}`, {
-          id: loadingToast,
-          duration: 4000
-        });
+        // 🔥 Jetla guest kharekhar add thaya e pramane credit kapo
+        const finalTotal = guests.length + successCount;
+        try {
+          await applyTierIncrease(finalTotal);
+        } catch (creditErr: any) {
+          console.error('Credit charge error:', creditErr);
+          toast.error('Guests add thaya pan credit update ma problem aavi. Support ne contact karo.', {
+            duration: 5000,
+          });
+        }
+
+        toast.success(
+          `Successfully imported ${successCount} guest(s)!${errorCount > 0 ? ` Failed: ${errorCount}` : ''}${check.extra > 0 ? ` ${check.extra} extra credit cut thayu.` : ''}`,
+          {
+            id: loadingToast,
+            duration: 4000
+          }
+        );
         if (errors.length > 0) {
           console.error('Import errors:', errors);
           toast.error(`Failed to import ${errors.length} guest(s). Check console for details.`, {
@@ -425,6 +525,21 @@ export default function GuestsPage() {
           {!selectedEvent && (
             <p className="text-sm text-amber-600 mt-2">Select an event above to add or view guests.</p>
           )}
+
+          {/* 🔥 Credit tier info */}
+          {selectedEvent && (
+            <div className="mt-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+              <p className="font-medium">
+                {guests.length} / {MAX_GUESTS_PER_EVENT} guests
+                {isEventActive
+                  ? ` • ${alreadyPaidCredits} credit(s) used`
+                  : ' • Draft event (activate karo tyare credit katse)'}
+              </p>
+              <p className="mt-1 opacity-80">
+                1–100 guests = 1 credit • 101–200 = 2 credits • 201–500 = 3 credits
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -458,7 +573,8 @@ export default function GuestsPage() {
                     <li>Download the template using the "Template" button above</li>
                     <li>Fill in your guest data (Name and Phone are required)</li>
                     <li>Upload the file using the button below</li>
-                    <li>Maximum 1000 guests per import</li>
+                    <li>Maximum {MAX_GUESTS_PER_EVENT} guests per event</li>
+                    <li>Guest count pramane credit cut thase (1–100 = 1, 101–200 = 2, 201–500 = 3)</li>
                   </ul>
                 </div>
               </div>
@@ -527,7 +643,7 @@ export default function GuestsPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="Guest full name"
                 />
-              </div>
+               </div>
               <div>
                 <Label htmlFor="phone">Phone (with country code) *</Label>
                 <Input
@@ -795,7 +911,7 @@ export default function GuestsPage() {
                             );
                             if (startPage > 2) {
                               pages.push(
-                                <span key="ellipsis1" className="px-1 text-gray-400">
+                                 <span key="ellipsis1" className="px-1 text-gray-400">
                                   …
                                 </span>
                               );

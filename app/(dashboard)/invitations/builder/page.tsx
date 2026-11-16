@@ -84,6 +84,7 @@ export default function InvitationBuilderPage() {
   const [selectedEvent, setSelectedEvent] = useState('');
   const [selectedFunction, setSelectedFunction] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [savedInvitationId, setSavedInvitationId] = useState<string | null>(null);
 
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -120,17 +121,15 @@ export default function InvitationBuilderPage() {
     allFunctions: [] as WeddingFunction[],
   });
 
-  const { events, loading: eventsLoading } = useEvents();
+  const { events, loading: eventsLoading, markInvitationShared, markInvitationDownloaded } = useEvents();
   const { uploadFile, uploading } = useFileUpload();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const invitationRef = useRef<HTMLDivElement>(null);
 
   const selectedEventData = events.find((e: any) => e.id === selectedEvent);
 
-  // 🔥 FIX: Single source of truth for functions — always read from `content.allFunctions`,
-  // which is now kept in sync (see useEffect below) instead of a second, independently
-  // computed variable that could drift out of sync with what Preview actually renders.
   const eventFunctions: WeddingFunction[] = content.allFunctions || [];
   const isWeddingWithFunctions =
     selectedEventData?.eventType === 'Wedding' && eventFunctions.length > 0;
@@ -201,10 +200,6 @@ export default function InvitationBuilderPage() {
   const removeLogo = () => setUploadedLogo(null);
   const removeCover = () => setCoverImage(null);
 
-  // Called when the user picks an event from the dropdown.
-  // Kept for the eventName/venue/host fields, but functions themselves
-  // are now synced by the useEffect below so they don't depend on this
-  // firing at exactly the right moment.
   const handleEventSelect = (eventId: string) => {
     setSelectedEvent(eventId);
     setSelectedFunction('');
@@ -235,17 +230,6 @@ export default function InvitationBuilderPage() {
     }
   };
 
-  // 🔥 FIX: This is the actual bug fix.
-  // Previously `content.allFunctions` was ONLY set inside handleEventSelect's onChange
-  // handler. If `events` (from the Firestore onSnapshot listener in useEvents) was still
-  // loading — or updated later — at the moment the user picked an event, `selectedEventData`
-  // could be stale/undefined and `allFunctions` would silently stay `[]`, which made
-  // InvitationCard fall back to the plain single-date "WHEN / WHERE" layout instead of
-  // the per-function list, even though the data existed in Firestore all along.
-  //
-  // This effect re-derives `allFunctions` any time `selectedEvent` OR the underlying
-  // `events` array changes, so it always reflects the latest Firestore data — regardless
-  // of load timing, reselection, or live updates.
   useEffect(() => {
     if (!selectedEvent) return;
     const event = events.find((e: any) => e.id === selectedEvent);
@@ -254,7 +238,6 @@ export default function InvitationBuilderPage() {
     const functions: WeddingFunction[] = Array.isArray(event.functions) ? event.functions : [];
 
     setContent(prev => {
-      // Avoid unnecessary re-renders if nothing actually changed
       const same =
         prev.allFunctions.length === functions.length &&
         JSON.stringify(prev.allFunctions) === JSON.stringify(functions);
@@ -279,8 +262,6 @@ export default function InvitationBuilderPage() {
 
     setIsGenerating(true);
     try {
-      // 🔥 Direct fetch from Firestore to guarantee the very latest functions,
-      // in case the event doc changed after it was loaded into `events`.
       const eventDoc = await getDoc(doc(db, 'events', selectedEvent));
       let allFunctions: WeddingFunction[] = [];
 
@@ -290,8 +271,6 @@ export default function InvitationBuilderPage() {
         console.log('🔥🔥🔥 Functions from event (direct fetch):', allFunctions);
       }
 
-      // Keep local preview state in sync with what we're about to save,
-      // so the Preview tab immediately reflects the freshly-fetched data too.
       setContent(prev => ({ ...prev, allFunctions }));
 
       const invitationContent = {
@@ -337,15 +316,65 @@ export default function InvitationBuilderPage() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!savedInvitationId) {
       toast.error('Generate the invitation first');
       return;
     }
-    toast.success('Downloading invitation...');
+
+    if (!invitationRef.current) {
+      toast.error('Open the Preview tab first, then download');
+      setActiveTab('preview');
+      return;
+    }
+
+    setIsDownloading(true);
+    const loadingToast = toast.loading('Preparing your invitation...');
+
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+
+      const canvas = await html2canvas(invitationRef.current, {
+        backgroundColor: colors.background || '#ffffff',
+        scale: 2,
+        useCORS: true,
+      });
+
+      const blob: Blob | null = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/png')
+      );
+
+      if (!blob) {
+        throw new Error('Could not generate image');
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(content.eventName || 'invitation').replace(/\s+/g, '-').toLowerCase()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('Invitation downloaded!', { id: loadingToast });
+
+      if (selectedEvent) {
+        try {
+          await markInvitationDownloaded(selectedEvent);
+        } catch (err) {
+          console.error('Failed to mark invitation as downloaded:', err);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error downloading invitation:', error);
+      toast.error(error?.message || 'Failed to download invitation', { id: loadingToast });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!savedInvitationId) {
       toast.error('Generate the invitation first');
       return;
@@ -353,10 +382,108 @@ export default function InvitationBuilderPage() {
     const shareUrl = `${window.location.origin}/invitations/view/${savedInvitationId}`;
     navigator.clipboard.writeText(shareUrl);
     toast.success('Share link copied to clipboard!');
+
+    if (selectedEvent) {
+      try {
+        await markInvitationShared(selectedEvent);
+      } catch (err) {
+        console.error('Failed to mark invitation as shared:', err);
+      }
+    }
   };
 
-  const handlePrint = () => {
-    window.print();
+  // 🔥 FIXED: window.open() must fire synchronously, right on click — an
+  // await before it (e.g. the html2canvas capture) strips Chrome's "this
+  // came from a real click" flag, so the popup gets silently blocked and
+  // print() ends up firing on the current dashboard tab instead. Fix: open
+  // the window immediately with a loading placeholder, THEN do the async
+  // capture, THEN fill that same window with the final image.
+  const handlePrint = async () => {
+    if (!invitationRef.current) {
+      toast.error('Open the Preview tab first, then print');
+      setActiveTab('preview');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=900,height=1200');
+    if (!printWindow) {
+      toast.error('Please allow popups for this site to print the invitation');
+      return;
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>${content.eventName || 'Invitation'}</title></head>
+        <body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;color:#666;">
+          Preparing invitation...
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+
+    const loadingToast = toast.loading('Preparing invitation for print...');
+
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+
+      const canvas = await html2canvas(invitationRef.current, {
+        backgroundColor: colors.background || '#ffffff',
+        scale: 2,
+        useCORS: true,
+      });
+
+      const dataUrl = canvas.toDataURL('image/png');
+
+      if (printWindow.closed) {
+        toast.error('Print window was closed', { id: loadingToast });
+        return;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${content.eventName || 'Invitation'}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              html, body {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff;
+              }
+              img {
+                max-width: 100%;
+                height: auto;
+              }
+              @media print {
+                @page { margin: 0.5cm; }
+                body { display: block; }
+                img { width: 100%; }
+              }
+            </style>
+          </head>
+          <body>
+            <img id="invite-img" src="${dataUrl}" alt="${content.eventName || 'Invitation'}" />
+            <script>
+              var img = document.getElementById('invite-img');
+              function go() { window.focus(); window.print(); }
+              if (img.complete) { go(); } else { img.onload = go; }
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+
+      toast.success('Opening print dialog...', { id: loadingToast });
+    } catch (error: any) {
+      console.error('Error printing invitation:', error);
+      toast.error(error?.message || 'Failed to print invitation', { id: loadingToast });
+      if (!printWindow.closed) printWindow.close();
+    }
   };
 
   if (eventsLoading) {
@@ -872,7 +999,8 @@ export default function InvitationBuilderPage() {
                     onChange={(e) => setFonts({ ...fonts, [key]: e.target.value })}
                     className="w-full mt-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
                     style={{ fontFamily: value }}
-                  >
+           
+           >
                     {fontOptions.map((font) => (
                       <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
                         {font.label}
@@ -909,8 +1037,12 @@ export default function InvitationBuilderPage() {
                   Invitation Preview
                 </CardTitle>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleDownload}>
-                    <Download className="h-4 w-4 mr-2" />
+                  <Button variant="outline" onClick={handleDownload} disabled={isDownloading}>
+                    {isDownloading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
                     Download
                   </Button>
                   <Button variant="outline" onClick={handleShare}>
@@ -926,14 +1058,16 @@ export default function InvitationBuilderPage() {
             </CardHeader>
             <CardContent>
               <div className="flex justify-center bg-gray-100 dark:bg-gray-950 rounded-xl p-6 md:p-14">
-                <InvitationCard
-                  template={selectedTemplate}
-                  colors={colors}
-                  fonts={fonts}
-                  content={content}
-                  images={{ cover: coverImage, logo: uploadedLogo, gallery: uploadedImages }}
-                  selectedFunction={selectedFunction}
-                />
+                <div ref={invitationRef}>
+                  <InvitationCard
+                    template={selectedTemplate}
+                    colors={colors}
+                    fonts={fonts}
+                    content={content}
+                    images={{ cover: coverImage, logo: uploadedLogo, gallery: uploadedImages }}
+                    selectedFunction={selectedFunction}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -16,16 +16,7 @@ export interface PlanExpiryInfo {
   loading: boolean;
 }
 
-/**
- * Reads the user's plan name + expiry date from Firestore (users/{uid})
- * and computes a notification status based on how many days remain:
- * - 30 / 15 / 7 days out -> 'reminder'
- * - <= 7 days -> 'warning'
- * - <= 3 days -> 'urgent' (shows every day until expiry)
- * - < 0 days -> 'expired' (keeps showing after expiry too)
- *
- * Expects Firestore fields: users/{uid}.planName (string), users/{uid}.planExpiryDate (Timestamp | string)
- */
+
 export function usePlanExpiry(): PlanExpiryInfo {
   const { user, loading: authLoading } = useAuth();
   // ✅ providers/AuthProvider just re-exports contexts/AuthContext's useAuth,
@@ -90,15 +81,7 @@ export function usePlanExpiry(): PlanExpiryInfo {
         setLoading(false);
       },
       async (err) => {
-        // 🔥 FIX: The realtime listener can transiently fail right after a
-        // page reload (e.g. the Firestore auth token hasn't fully
-        // propagated yet even though `user` is already set) — see the same
-        // class of bug documented in useEvents() in hooks/useFirebase.ts.
-        // Previously this just logged and left `planName` stuck at null
-        // forever, which showed as "No Plan" in the sidebar until the user
-        // logged out and back in. Fall back to a one-shot getDoc instead of
-        // giving up, so a transient listener error doesn't require a
-        // manual re-login to recover.
+   
         console.error('usePlanExpiry onSnapshot error, falling back to getDoc:', err);
         try {
           const snap = await getDoc(userRef);
