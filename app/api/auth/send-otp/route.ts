@@ -1,4 +1,4 @@
-// 📁 FILE PATH: app/api/auth/send-otp/route.ts   (નવી ફાઇલ, ફોલ્ડર: send-otp)
+// 📁 FILE PATH: app/api/auth/send-otp/route.ts   (જૂની ફાઇલ પૂરી બદલો)
 import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { verifyCaptcha } from '@/lib/captcha';
@@ -21,6 +21,8 @@ const fail = (error: string, status = 400, extra: object = {}) =>
   NextResponse.json({ error, ...extra }, { status });
 
 export async function POST(req: Request) {
+  // DEBUG: કયા step પર error આવ્યો તે જાણવા (સમસ્યા ઉકેલાય પછી stage કાઢી શકાય)
+  let stage = 'start';
   try {
     const { name, email: rawEmail, captchaToken, resend } = await req.json();
 
@@ -31,6 +33,7 @@ export async function POST(req: Request) {
     if (!cleanName) return fail('Please enter your name.');
 
     // પહેલેથી રજિસ્ટર્ડ છે?
+    stage = 'firebase-admin-getUserByEmail';
     try {
       await adminAuth.getUserByEmail(email);
       return fail('Email already in use. Please login.', 409);
@@ -38,15 +41,16 @@ export async function POST(req: Request) {
       if (e?.code !== 'auth/user-not-found') throw e;
     }
 
+    stage = 'firestore-read';
     const ref = adminDb.collection('emailOtps').doc(otpDocId(email));
     const snap = await ref.get();
     const data = snap.data();
     const now = Date.now();
 
     if (resend) {
-      // ફરી મોકલવા માટે પહેલા code બન્યો હોવો જોઈએ (captcha પહેલી વારે થઈ ગયું)
       if (!snap.exists) return fail('Please start again.');
     } else {
+      stage = 'captcha-verify';
       const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
       const ok = await verifyCaptcha(captchaToken, ip);
       if (!ok) return fail('Robot check failed. Please try again.');
@@ -70,10 +74,13 @@ export async function POST(req: Request) {
       }
     }
 
+    stage = 'otp-generate-hash';
     const otp = generateOtp();
+    const otpHash = hashOtp(email, otp);
 
+    stage = 'firestore-write';
     await ref.set({
-      otpHash: hashOtp(email, otp),
+      otpHash,
       expiresAt: now + OTP_TTL_MS,
       attempts: 0,
       lastSentAt: now,
@@ -81,14 +88,17 @@ export async function POST(req: Request) {
       sendCount: sendCount + 1,
     });
 
+    stage = 'send-email';
     await sendOtpEmail(email, cleanName, otp);
 
     return NextResponse.json({ success: true, cooldown: OTP_RESEND_COOLDOWN_MS / 1000 });
   } catch (e: any) {
-    console.error('send-otp error:', e);
+    console.error(`send-otp error [${stage}]:`, e);
     const detail = e?.message || 'Unknown error';
     return fail(
-      process.env.NODE_ENV === 'production' ? 'Could not send code. Please try again.' : `Could not send code: ${detail}`,
+      process.env.NODE_ENV === 'production'
+        ? `Could not send code. [${stage}]`
+        : `Could not send code [${stage}]: ${detail}`,
       500
     );
   }
