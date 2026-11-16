@@ -1,7 +1,8 @@
-// FILE PATH: lib/firebaseAdmin.ts   (નવી ફાઇલ બનાવો)
+// FILE PATH: lib/firebaseAdmin.ts
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 if (!getApps().length) {
   initializeApp({
@@ -10,11 +11,15 @@ if (!getApps().length) {
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     }),
+    // 🔥 Storage mate jaruri (upload route)
+    storageBucket:
+      process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   });
 }
 
 export const adminAuth = getAuth();
 export const adminDb = getFirestore();
+export const adminStorage = getStorage();
 
 /** Reads "Authorization: Bearer <Firebase ID token>" and returns the verified uid. */
 export async function getUidFromRequest(req: Request): Promise<string> {

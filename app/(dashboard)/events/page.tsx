@@ -20,7 +20,16 @@ export default function EventsPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const { events, loading, error, deleteEvent, updateEvent, refreshEvents } = useEvents();
   // 🔥 Navi functions: remainingCredits, consumeCredits(n), forfeitCredits(n)
-  const { remainingCredits, consumeCredits, forfeitCredits, refreshPlan } = usePaymentPlans();
+  const { remainingEvents, incrementEventCount, forfeitCredit, refreshPlan } = usePaymentPlans();
+
+  // Junu hook vapri ne navi functions nu shim (jyaare hook update thay tyare aa kadhi nakhvu)
+  const remainingCredits = remainingEvents();
+  const consumeCredits = async (n: number) => {
+    for (let i = 0; i < n; i++) await incrementEventCount();
+  };
+  const forfeitCredits = async (n: number) => {
+    for (let i = 0; i < n; i++) await forfeitCredit();
+  };
 
   // 🔥 Event ne ketla credit joie (guest count pramane)
   const getRequiredCredits = (event: EventDoc) =>

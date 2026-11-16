@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     const guests = snapshot.docs.map(doc => ({ 
       id: doc.id, 
       ...doc.data() 
-    }));+++++
+    }));
     
     return NextResponse.json(guests);
   } catch (error) {

@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, DocumentReference, DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/lib/config';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Loader2, Check, X, Heart, Minus, Plus, Pencil } from 'lucide-react';
@@ -37,7 +37,7 @@ const waitForAuth = () =>
   });
 
 // getDoc je permission-denied par auth ready thay pachhi ek var retry kare
-const safeGetDoc = async (ref: any) => {
+const safeGetDoc = async (ref: DocumentReference<DocumentData>): Promise<DocumentSnapshot<DocumentData>> => {
   try {
     return await getDoc(ref);
   } catch (e: any) {

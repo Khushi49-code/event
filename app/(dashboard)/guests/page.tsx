@@ -34,7 +34,13 @@ export default function GuestsPage() {
   const [selectedEvent, setSelectedEvent] = useState('');
   const { events, loading: eventsLoading, updateEvent } = useEvents();
   const { guests, loading: guestsLoading, fetchGuests } = useGuests(selectedEvent);
-  const { remainingCredits, consumeCredits, refreshPlan } = usePaymentPlans();
+  const { remainingEvents, incrementEventCount, refreshPlan } = usePaymentPlans();
+
+  // Junu hook vapri ne navi functions nu shim (jyaare hook update thay tyare aa kadhi nakhvu)
+  const remainingCredits = remainingEvents();
+  const consumeCredits = async (n: number) => {
+    for (let i = 0; i < n; i++) await incrementEventCount();
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
