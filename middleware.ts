@@ -6,17 +6,28 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('firebaseAuthToken');
   const { pathname } = request.nextUrl;
 
-  // Public paths that don't require authentication
-  const publicPaths = ['/login', '/register', '/forgot-password'];
-  const isPublicPath = publicPaths.includes(pathname);
+  // Auth pages (logged-in user ne aa pages par jaavu nahi joie)
+  const authPaths = ['/login', '/register', '/forgot-password'];
+  const isAuthPath = authPaths.includes(pathname);
 
-  // If user is not authenticated and trying to access protected route
-  if (!token && !isPublicPath) {
+  // Guest mate fully public pages (login jaruri nathi)
+  const publicPrefixes = ['/invitations/view'];
+  const isPublicRoute = publicPrefixes.some(
+    (p) => pathname === p || pathname.startsWith(p + '/')
+  );
+
+  // Guest invitation page: hamesha allow
+  if (isPublicRoute) {
+    return NextResponse.next();
+  }
+
+  // Not authenticated + protected route -> login
+  if (!token && !isAuthPath) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // If user is authenticated and trying to access public path
-  if (token && isPublicPath) {
+  // Authenticated + login/register page -> home
+  if (token && isAuthPath) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
