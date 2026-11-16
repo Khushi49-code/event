@@ -21,7 +21,7 @@ const fail = (error: string, status = 400, extra: object = {}) =>
   NextResponse.json({ error, ...extra }, { status });
 
 export async function POST(req: Request) {
-  // DEBUG: કયા step પર error આવ્યો તે જાણવા (સમસ્યા ઉકેલાય પછી stage કાઢી શકાય)
+  // TEMP DEBUG: સમસ્યા મળી જાય પછી detail કાઢી નાખજો
   let stage = 'start';
   try {
     const { name, email: rawEmail, captchaToken, resend } = await req.json();
@@ -32,7 +32,6 @@ export async function POST(req: Request) {
     if (!isValidEmail(email)) return fail('Invalid email address.');
     if (!cleanName) return fail('Please enter your name.');
 
-    // પહેલેથી રજિસ્ટર્ડ છે?
     stage = 'firebase-admin-getUserByEmail';
     try {
       await adminAuth.getUserByEmail(email);
@@ -95,12 +94,6 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error(`send-otp error [${stage}]:`, e);
     const detail = e?.message || 'Unknown error';
-    return fail(
-      process.env.NODE_ENV === 'production'
-        ? `Could not send code. [${stage}]`
-        : `Could not send code [${stage}]: ${detail}`,
-      500
-    );
+    return fail(`Could not send code [${stage}]: ${detail}`, 500);
   }
 }
-
